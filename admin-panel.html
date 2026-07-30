@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yayın Masası — Veri Yönetimi</title>
+
+<!--
+  ============================================================================
+  YAYIN MASASI — Supabase manuel veri yönetim paneli
+  ============================================================================
+
+  NE YAPAR
+    Supabase projesine bağlanır, tablolarını ve kolonlarını kendisi keşfeder,
+    satırları listeler, düzenler, ekler ve siler. Hiçbir tablo adı veya kolon
+    adı koda gömülü DEĞİLDİR — hepsi çalışma anında okunur.
+
+  MEVCUT YAPIYA ETKİSİ
+    Yok. Sadece PostgREST üzerinden okuma/yazma yapar. Şema değiştirmez,
+    tablo oluşturmaz, view'lara dokunmaz. Uygulamanın veri akışı aynı kalır.
+
+  CLAUDE CODE İLE UYGULAMAYA TAŞIMA
+    Tüm Supabase iletişimi aşağıdaki "API KATMANI" bloğunda toplandı.
+    O blok saf fetch çağrılarından oluşur, DOM'a bağımlı değildir —
+    React Native'e olduğu gibi kopyalanabilir. Arayüz kodu "ARAYÜZ"
+    bloğundadır ve taşınırken yeniden yazılır.
+
+  GÜVENLİK
+    service_role anahtarını ASLA buraya yapıştırma. Panel bunu algılayıp
+    uyarır. Yazma yetkisi için Supabase Auth ile kendi yönetici
+    hesabınla giriş yap ve o kullanıcıya RLS politikası tanımla.
+  ============================================================================
+-->
+
+<style>
+  :root {
+    --surface:        #14181f;
+    --surface-raised: #1c222c;
+    --surface-input:  #0f131a;
+    --line:           #2a3240;
+    --line-bright:    #3a465a;
+    --ink:            #e6ebf2;
+    --ink-dim:        #8794a7;
+    --ink-faint:      #5b6779;
+    --signal:         #ffe812;
+    --danger:         #ff5c47;
+    --ok:             #3ddc97;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--surface);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14px;
+  }
+
+  body { display: flex; flex-direction: column; }
+
+  /* ---------- Üst şerit: bağlantı ---------- */
+
+  header {
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-raised);
+    flex-shrink: 0;
+  }
+
+  .brand {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 14px 18px 10px;
+  }
+  .brand h1 {
+    margin: 0; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  .brand .sub {
+    font-family: var(--mono); font-size: 11px; color: var(--ink-faint);
+  }
+  .onair {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--line-bright); flex-shrink: 0;
+    align-self: center;
+  }
+  .onair.live { background: var(--signal); box-shadow: 0 0 8px var(--signal); }
+
+  .conn {
+    display: grid;
+    grid-template-columns: 2fr 2fr 1.4fr 1.4fr auto;
+    gap: 8px; padding: 0 18px 14px;
+    align-items: end;
+  }
+  @media (max-width: 900px) {
+    .conn { grid-template-columns: 1fr 1fr; }
+  }
+
+  label {
+    display: block;
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--ink-faint); margin-bottom: 5px;
+  }
+
+  input, select, textarea {
+    width: 100%;
+    background: var(--surface-input);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    font-family: var(--mono); font-size: 12px;
+    padding: 8px 9px; border-radius: 3px;
+  }
+  input:focus, select:focus, textarea:focus, button:focus-visible {
+    outline: 2px solid var(--signal); outline-offset: 1px;
+  }
+
+  button {
+    background: var(--surface-input);
+    border: 1px solid var(--line-bright);
+    color: var(--ink);
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 9px 14px; border-radius: 3px; cursor: pointer;
+    white-space: nowrap;
+  }
+  button:hover:not(:disabled) { border-color: var(--signal); color: var(--signal); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  button.primary {
+    background: var(--signal); border-color: var(--signal);
+    color: #14181f; font-weight: 700;
+  }
+  button.primary:hover:not(:disabled) { color: #14181f; filter: brightness(1.1); }
+  button.danger { border-color: #5a2a26; color: var(--danger); }
+  button.danger:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+  button.tiny { padding: 5px 9px; font-size: 10px; }
+
+  /* ---------- Uyarı bandı ---------- */
+
+  .warn {
+    display: none;
+    margin: 0 18px 14px; padding: 10px 12px;
+    border-left: 3px solid var(--danger);
+    background: rgba(255,92,71,0.09);
+    font-size: 12px; line-height: 1.5;
+  }
+  .warn.show { display: block; }
+
+  /* ---------- Gövde ---------- */
+
+  main { flex: 1; display: flex; min-height: 0; }
+
+  aside {
+    width: 230px; flex-shrink: 0;
+    border-right: 1px solid var(--line);
+    overflow-y: auto; padding: 14px 0;
+  }
+  @media (max-width: 720px) {
+    main { flex-direction: column; }
+    aside { width: 100%; max-height: 160px; border-right: none;
+            border-bottom: 1px solid var(--line); }
+  }
+
+  .aside-title {
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-faint); padding: 0 16px 10px;
+  }
+
+  .tbl-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px; cursor: pointer;
+    font-family: var(--mono); font-size: 12px;
+    border-left: 2px solid transparent;
+  }
+  .tbl-item:hover { background: var(--surface-raised); }
+  .tbl-item.active {
+    border-left-color: var(--signal);
+    background: var(--surface-raised); color: var(--signal);
+  }
+  .tbl-item .ro {
+    font-size: 9px; color: var(--ink-faint);
+    border: 1px solid var(--line-bright); padding: 1px 4px; border-radius: 2px;
+  }
+
+  section.work { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  .toolbar {
+    display: flex; gap: 8px; align-items: end;
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
+    flex-wrap: wrap; flex-shrink: 0;
+  }
+  .toolbar .grow { flex: 1; min-width: 120px; }
+  .toolbar .fixed { width: 120px; }
+
+  .grid-wrap { flex: 1; overflow: auto; }
+
+  table { border-collapse: collapse; width: 100%; }
+
+  thead th {
+    position: sticky; top: 0; z-index: 2;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--line-bright);
+    padding: 9px 10px; text-align: left;
+    font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-dim); white-space: nowrap;
+  }
+  thead th .type {
+    display: block; font-size: 9px; color: var(--ink-faint);
+    letter-spacing: 0; text-transform: none; margin-top: 2px;
+  }
+  thead th.pk { color: var(--signal); }
+
+  tbody td {
+    border-bottom: 1px solid var(--line);
+    padding: 0; vertical-align: middle;
+  }
+  tbody tr:hover { background: rgba(255,255,255,0.018); }
+
+  /* SİNYAL RAYI — satırın kayıt durumu */
+  td.rail {
+    width: 4px; padding: 0;
+    background: var(--line); position: relative;
+  }
+  tr.dirty td.rail { background: var(--signal); box-shadow: 0 0 7px var(--signal); }
+  tr.saved td.rail { background: var(--ok); }
+
+  tbody input, tbody select {
+    border: 1px solid transparent; background: transparent;
+    border-radius: 0; padding: 9px 10px; font-size: 12px;
+    min-width: 90px;
+  }
+  tbody input:hover, tbody select:hover { border-color: var(--line-bright); }
+  tbody input:focus, tbody select:focus {
+    background: var(--surface-input); border-color: var(--signal);
+    outline: none;
+  }
+  tbody input[readonly] { color: var(--ink-faint); cursor: default; }
+  tbody input[readonly]:hover { border-color: transparent; }
+
+  td.act { white-space: nowrap; padding: 0 10px; }
+  td.chk { width: 34px; text-align: center; }
+  input[type=checkbox] { width: auto; accent-color: var(--signal); }
+
+  /* ---------- Boş / yükleniyor durumları ---------- */
+
+  .empty {
+    padding: 48px 24px; text-align: center;
+    color: var(--ink-dim); font-size: 13px; line-height: 1.7;
+  }
+  .empty strong { color: var(--ink); display: block; margin-bottom: 6px; }
+  .empty code {
+    font-family: var(--mono); font-size: 11px;
+    background: var(--surface-input); padding: 2px 5px; border-radius: 2px;
+  }
+
+  /* ---------- Alt kayıt şeridi ---------- */
+
+  footer {
+    flex-shrink: 0; border-top: 1px solid var(--line);
+    background: var(--surface-raised);
+    max-height: 132px; overflow-y: auto;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .log-line { padding: 5px 16px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+  .log-line .t { color: var(--ink-faint); margin-right: 8px; }
+  .log-line.err { color: var(--danger); }
+  .log-line.ok  { color: var(--ok); }
+
+  /* ---------- Yeni satır katmanı ---------- */
+
+  .sheet {
+    display: none; position: fixed; inset: 0; z-index: 50;
+    background: rgba(6,8,11,0.78);
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .sheet.show { display: flex; }
+  .sheet-box {
+    background: var(--surface-raised); border: 1px solid var(--line-bright);
+    border-radius: 4px; width: 100%; max-width: 520px;
+    max-height: 86vh; display: flex; flex-direction: column;
+  }
+  .sheet-head {
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    font-family: var(--mono); font-size: 11px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .sheet-body { padding: 16px 18px; overflow-y: auto; }
+  .sheet-body .fld { margin-bottom: 13px; }
+  .sheet-foot {
+    padding: 13px 18px; border-top: 1px solid var(--line);
+    display: flex; gap: 8px; justify-content: flex-end;
+  }
+
+  /* ---------- Sekme geçişi ---------- */
+
+  .tabs { display: flex; gap: 4px; padding: 0 18px 12px; }
+  .tab-btn {
+    background: transparent; border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    color: var(--ink-dim); border-radius: 0;
+    padding: 8px 4px; margin-right: 14px;
+  }
+  .tab-btn:hover:not(:disabled) { color: var(--ink); border-color: transparent; }
+  .tab-btn.active {
+    color: var(--signal); border-bottom-color: var(--signal);
+  }
+
+  /* ---------- Maç Editörü ---------- */
+
+  .me-work { padding: 18px; overflow-y: auto; }
+  .me-search-bar {
+    display: flex; gap: 8px; align-items: end;
+    max-width: 480px; margin-bottom: 18px;
+  }
+  .me-search-fld { flex: 1; }
+  .me-body { max-width: 560px; }
+
+  .me-result {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 11px 13px; margin-bottom: 6px;
+    background: var(--surface-raised); border: 1px solid var(--line);
+    border-radius: 4px; cursor: pointer;
+  }
+  .me-result:hover { border-color: var(--line-bright); }
+  .me-result .teams { font-weight: 600; }
+  .me-result .when { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
+
+  .me-card {
+    background: var(--surface-raised); border: 1px solid var(--line-bright);
+    border-radius: 4px; padding: 18px;
+  }
+  .me-teams { font-size: 17px; font-weight: 700; margin-bottom: 2px; }
+  .me-sub { font-family: var(--mono); font-size: 11px; color: var(--ink-faint); margin-bottom: 16px; }
+  .me-row { display: flex; gap: 12px; margin-bottom: 13px; }
+  .me-row .fld { flex: 1; }
+  .me-actions { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .me-back { margin-bottom: 14px; }
+  .me-status { font-family: var(--mono); font-size: 11px; margin-left: 4px; }
+  .me-status.ok { color: var(--ok); }
+  .me-status.err { color: var(--danger); }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+    .onair.live, tr.dirty td.rail { box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="onair" id="onair"></span>
+    <h1>Yayın Masası</h1>
+    <span class="sub" id="brandSub">bağlantı bekleniyor</span>
+  </div>
+
+  <div class="conn">
+    <div>
+      <label for="url">Proje URL</label>
+      <input id="url" value="https://pwpwibvomoujxokjxtlp.supabase.co" spellcheck="false">
+    </div>
+    <div>
+      <label for="key">Anon anahtar</label>
+      <input id="key" type="password" placeholder="eyJ..." spellcheck="false">
+    </div>
+    <div>
+      <label for="email">Yönetici e-posta</label>
+      <input id="email" placeholder="boş bırakılabilir" spellcheck="false">
+    </div>
+    <div>
+      <label for="pass">Şifre</label>
+      <input id="pass" type="password" placeholder="boş bırakılabilir">
+    </div>
+    <div>
+      <button class="primary" id="btnConnect">Bağlan</button>
+    </div>
+  </div>
+
+  <div class="warn" id="warnBox"></div>
+
+  <div class="tabs" id="tabs" style="display:none">
+    <button class="tab-btn active" id="tabGeneric" type="button">Genel Tablo Editörü</button>
+    <button class="tab-btn" id="tabMatch" type="button">Maç Editörü</button>
+  </div>
+</header>
+
+<main id="viewTables">
+  <aside>
+    <div class="aside-title">Tablolar</div>
+    <div id="tableList">
+      <div class="empty" style="padding:20px 16px;text-align:left;font-size:12px">
+        Bağlandığında tablolar burada listelenir.
+      </div>
+    </div>
+  </aside>
+
+  <section class="work">
+    <div class="toolbar">
+      <div class="fixed">
+        <label for="fCol">Filtre kolonu</label>
+        <select id="fCol"><option value="">—</option></select>
+      </div>
+      <div class="fixed">
+        <label for="fOp">Koşul</label>
+        <select id="fOp">
+          <option value="eq">eşittir</option>
+          <option value="neq">eşit değil</option>
+          <option value="ilike">içerir</option>
+          <option value="gte">≥</option>
+          <option value="lte">≤</option>
+          <option value="is">boş mu (null)</option>
+        </select>
+      </div>
+      <div class="grow">
+        <label for="fVal">Değer</label>
+        <input id="fVal" placeholder="ilike için: %beIN%" spellcheck="false">
+      </div>
+      <div class="fixed">
+        <label for="fSort">Sırala</label>
+        <select id="fSort"><option value="">—</option></select>
+      </div>
+      <div class="fixed">
+        <label for="fLimit">Satır</label>
+        <select id="fLimit">
+          <option>50</option><option selected>100</option>
+          <option>250</option><option>500</option>
+        </select>
+      </div>
+      <button id="btnLoad" disabled>Getir</button>
+      <button id="btnNew" disabled>+ Satır ekle</button>
+      <button id="btnBulk" disabled>Toplu değiştir</button>
+    </div>
+
+    <div class="grid-wrap" id="gridWrap">
+      <div class="empty">
+        <strong>Henüz bağlanmadın</strong>
+        Anon anahtarını yapıştır ve <code>Bağlan</code>'a bas.<br>
+        Panel tablolarını kendisi bulacak.
+      </div>
+    </div>
+  </section>
+</main>
+
+<main id="viewMatchEditor" style="display:none">
+  <section class="work me-work">
+    <div class="me-search-bar">
+      <div class="me-search-fld">
+        <label for="meQuery">Takım adıyla ara</label>
+        <input id="meQuery" placeholder="ör. Galatasaray" spellcheck="false">
+      </div>
+      <button id="meSearchBtn">Ara</button>
+    </div>
+    <div id="meBody" class="me-body">
+      <div class="empty">
+        <strong>Bir maç ara</strong>
+        Yukarıdan bir takım adı yaz ve <code>Ara</code>'ya bas.
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer id="log"></footer>
+
+<div class="sheet" id="sheet">
+  <div class="sheet-box">
+    <div class="sheet-head" id="sheetTitle">Yeni satır</div>
+    <div class="sheet-body" id="sheetBody"></div>
+    <div class="sheet-foot">
+      <button id="sheetCancel">Vazgeç</button>
+      <button class="primary" id="sheetSave">Kaydet</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ==========================================================================
+   API KATMANI
+   Saf fetch çağrıları. DOM bağımlılığı yok.
+   React Native'e taşınırken bu blok olduğu gibi kopyalanabilir.
+   ========================================================================== */
+
+const api = {
+  url: "", anonKey: "", token: null,
+
+  headers(extra) {
+    return Object.assign({
+      "apikey": this.anonKey,
+      "Authorization": "Bearer " + (this.token || this.anonKey),
+      "Content-Type": "application/json"
+    }, extra || {});
+  },
+
+  /** E-posta + şifre ile oturum açar, access_token döner. */
+  async signIn(email, password) {
+    const r = await fetch(this.url + "/auth/v1/token?grant_type=password", {
+      method: "POST",
+      headers: { "apikey": this.anonKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.error || "giriş başarısız");
+    this.token = j.access_token;
+    return j;
+  },
+
+  /**
+   * PostgREST'in OpenAPI tanımını okur.
+   * Tablo adları, kolonlar, tipler ve birincil anahtarlar buradan gelir —
+   * hiçbiri koda gömülü değil.
+   */
+  async introspect() {
+    const r = await fetch(this.url + "/rest/v1/", { headers: this.headers() });
+    if (!r.ok) throw new Error("şema okunamadı (HTTP " + r.status + ")");
+    const spec = await r.json();
+    const defs = spec.definitions || {};
+    const out = [];
+
+    for (const name of Object.keys(defs)) {
+      const props = defs[name].properties || {};
+      const cols = Object.keys(props).map(function (c) {
+        const p = props[c];
+        return {
+          name: c,
+          type: p.format || p.type || "text",
+          isPk: typeof p.description === "string" && p.description.indexOf("<pk/>") !== -1,
+          nullable: !(defs[name].required || []).includes(c)
+        };
+      });
+      const pk = cols.filter(function (c) { return c.isPk; });
+      out.push({ name: name, columns: cols, pk: pk, writable: pk.length > 0 });
+    }
+    out.sort(function (a, b) { return a.name.localeCompare(b.name); });
+    return out;
+  },
+
+  /** Satırları çeker. filter/sort/limit opsiyonel. */
+  async select(table, opts) {
+    opts = opts || {};
+    const q = new URLSearchParams();
+    q.set("select", "*");
+    q.set("limit", String(opts.limit || 100));
+    if (opts.sort) q.set("order", opts.sort + ".desc");
+    if (opts.filter && opts.filter.col && opts.filter.op) {
+      q.set(opts.filter.col, opts.filter.op + "." + opts.filter.val);
+    }
+    const r = await fetch(this.url + "/rest/v1/" + table + "?" + q.toString(),
+                          { headers: this.headers() });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.message || j.hint || "okuma başarısız");
+    return j;
+  },
+
+  /** pkValues: { kolon: değer }  patch: { kolon: yeniDeğer } */
+  async update(table, pkValues, patch) {
+    const q = new URLSearchParams();
+    for (const k in pkValues) q.set(k, "eq." + pkValues[k]);
+    const r = await fetch(this.url + "/rest/v1/" + table + "?" + q.toString(), {
+      method: "PATCH",
+      headers: this.headers({ "Prefer": "return=representation" }),
+      body: JSON.stringify(patch)
+    });
+    const j = await r.json().catch(function () { return null; });
+    if (!r.ok) throw new Error((j && (j.message || j.hint)) || "güncelleme reddedildi");
+    return j;
+  },
+
+  async insert(table, row) {
+    const r = await fetch(this.url + "/rest/v1/" + table, {
+      method: "POST",
+      headers: this.headers({ "Prefer": "return=representation" }),
+      body: JSON.stringify(row)
+    });
+    const j = await r.json().catch(function () { return null; });
+    if (!r.ok) throw new Error((j && (j.message || j.hint)) || "ekleme reddedildi");
+    return j;
+  },
+
+  async remove(table, pkValues) {
+    const q = new URLSearchParams();
+    for (const k in pkValues) q.set(k, "eq." + pkValues[k]);
+    const r = await fetch(this.url + "/rest/v1/" + table + "?" + q.toString(),
+                          { method: "DELETE", headers: this.headers() });
+    if (!r.ok) {
+      const j = await r.json().catch(function () { return null; });
+      throw new Error((j && (j.message || j.hint)) || "silme reddedildi");
+    }
+    return true;
+  }
+};
+
+/* ==========================================================================
+   ARAYÜZ
+   ========================================================================== */
+
+const el = function (id) { return document.getElementById(id); };
+const state = { tables: [], current: null, rows: [], dirty: {} };
+
+function log(msg, kind) {
+  const d = document.createElement("div");
+  d.className = "log-line" + (kind ? " " + kind : "");
+  const t = new Date().toLocaleTimeString("tr-TR");
+  d.innerHTML = '<span class="t">' + t + "</span>" + escapeHtml(msg);
+  el("log").prepend(d);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, function (c) {
+    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+  });
+}
+
+function warn(html) {
+  const w = el("warnBox");
+  if (!html) { w.className = "warn"; w.innerHTML = ""; return; }
+  w.className = "warn show"; w.innerHTML = html;
+}
+
+/** service_role anahtarını yakalar — tarayıcıda kesinlikle bulunmamalı. */
+function keyLooksDangerous(k) {
+  if (!k) return false;
+  if (k.indexOf("sb_secret_") === 0) return true;
+  try {
+    const payload = JSON.parse(atob(k.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload.role === "service_role";
+  } catch (e) { return false; }
+}
+
+/* ---------- Bağlan ---------- */
+
+el("btnConnect").addEventListener("click", async function () {
+  const url = el("url").value.trim().replace(/\/+$/, "");
+  const key = el("key").value.trim();
+  if (!url || !key) { log("URL ve anon anahtar zorunlu", "err"); return; }
+
+  if (keyLooksDangerous(key)) {
+    warn("<strong>Bu bir service_role anahtarı.</strong> Tarayıcıya yapıştırılmamalı — " +
+         "tüm güvenlik politikalarını baypas eder ve bu dosyayı gören herkes " +
+         "veri tabanının tamamına erişir. Supabase panelinden bu anahtarı " +
+         "yenile, sonra anon anahtarıyla tekrar dene.");
+    log("service_role anahtarı reddedildi", "err");
+    return;
+  }
+  warn(null);
+
+  api.url = url; api.anonKey = key; api.token = null;
+
+  const email = el("email").value.trim();
+  const pass = el("pass").value;
+  if (email && pass) {
+    try {
+      await api.signIn(email, pass);
+      log("oturum açıldı: " + email, "ok");
+    } catch (e) {
+      log("giriş başarısız — " + e.message + " (salt okunur devam ediliyor)", "err");
+    }
+  } else {
+    log("oturum açılmadı — yazma işlemleri RLS politikalarına takılabilir");
+  }
+
+  // Sekme çubuğu ve Maç Editörü, genel şema keşfinden BAĞIMSIZ açılır —
+  // Maç Editörü zaten hangi tabloların var olduğunu bilmiyor, doğrudan
+  // fixtures/channel_mappings'e sabit sorgu atıyor.
+  el("tabs").style.display = "flex";
+  el("onair").className = "onair live";
+  el("brandSub").textContent = api.token ? "yetkili" : "anonim";
+
+  try {
+    state.tables = await api.introspect();
+    renderTableList();
+    el("brandSub").textContent = state.tables.length + " tablo · " +
+      (api.token ? "yetkili" : "anonim");
+    log(state.tables.length + " tablo bulundu", "ok");
+  } catch (e) {
+    log("genel tablo listesi okunamadı — " + e.message +
+        " (Maç Editörü bundan etkilenmez, doğrudan sorgu kullanıyor)", "err");
+  }
+});
+
+function renderTableList() {
+  const box = el("tableList");
+  box.innerHTML = "";
+  state.tables.forEach(function (t) {
+    const d = document.createElement("div");
+    d.className = "tbl-item";
+    d.innerHTML = escapeHtml(t.name) +
+      (t.writable ? "" : ' <span class="ro">salt okunur</span>');
+    d.addEventListener("click", function () { selectTable(t, d); });
+    box.appendChild(d);
+  });
+}
+
+function selectTable(t, node) {
+  state.current = t; state.rows = []; state.dirty = {};
+  document.querySelectorAll(".tbl-item").forEach(function (n) {
+    n.classList.remove("active");
+  });
+  if (node) node.classList.add("active");
+
+  const cols = t.columns.map(function (c) { return c.name; });
+  fillSelect(el("fCol"), cols, true);
+  fillSelect(el("fSort"), cols, true);
+
+  el("btnLoad").disabled = false;
+  el("btnNew").disabled = !t.writable;
+  el("btnBulk").disabled = !t.writable;
+
+  if (!t.writable) {
+    log(t.name + " için birincil anahtar yok — büyük olasılıkla bir view. " +
+        "Düzenleme için altındaki asıl tabloyu seç.");
+  }
+  loadRows();
+}
+
+function fillSelect(sel, items, blank) {
+  sel.innerHTML = blank ? '<option value="">—</option>' : "";
+  items.forEach(function (i) {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = i; sel.appendChild(o);
+  });
+}
+
+/* ---------- Satırları getir ---------- */
+
+el("btnLoad").addEventListener("click", loadRows);
+
+async function loadRows() {
+  const t = state.current;
+  if (!t) return;
+  const fCol = el("fCol").value, fOp = el("fOp").value, fVal = el("fVal").value;
+  const opts = { limit: parseInt(el("fLimit").value, 10), sort: el("fSort").value || null };
+  if (fCol) {
+    opts.filter = { col: fCol, op: fOp, val: fOp === "is" ? "null" : fVal };
+  }
+  try {
+    state.rows = await api.select(t.name, opts);
+    state.dirty = {};
+    renderGrid();
+    log(t.name + " — " + state.rows.length + " satır getirildi", "ok");
+  } catch (e) {
+    log("okuma hatası — " + e.message, "err");
+    el("gridWrap").innerHTML = '<div class="empty"><strong>Okunamadı</strong>' +
+      escapeHtml(e.message) + "<br>RLS politikası okumayı engelliyor olabilir.</div>";
+  }
+}
+
+function renderGrid() {
+  const t = state.current, rows = state.rows;
+  if (!rows.length) {
+    el("gridWrap").innerHTML = '<div class="empty"><strong>Satır yok</strong>' +
+      "Filtre çok darsa temizleyip tekrar getir." +
+      (t.writable ? "<br>Ya da <code>+ Satır ekle</code> ile ilk kaydı oluştur." : "") +
+      "</div>";
+    return;
+  }
+
+  const tbl = document.createElement("table");
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  hr.innerHTML = '<th class="rail"></th>' + (t.writable ? '<th class="chk"></th>' : "");
+  t.columns.forEach(function (c) {
+    const th = document.createElement("th");
+    if (c.isPk) th.className = "pk";
+    th.innerHTML = escapeHtml(c.name) +
+      '<span class="type">' + escapeHtml(c.type) + (c.isPk ? " · anahtar" : "") + "</span>";
+    hr.appendChild(th);
+  });
+  if (t.writable) {
+    const th = document.createElement("th"); th.textContent = "işlem"; hr.appendChild(th);
+  }
+  thead.appendChild(hr); tbl.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  rows.forEach(function (row, idx) {
+    tbody.appendChild(buildRow(row, idx, t));
+  });
+  tbl.appendChild(tbody);
+
+  el("gridWrap").innerHTML = ""; el("gridWrap").appendChild(tbl);
+}
+
+function buildRow(row, idx, t) {
+  const tr = document.createElement("tr");
+  tr.dataset.idx = String(idx);
+
+  const rail = document.createElement("td"); rail.className = "rail";
+  tr.appendChild(rail);
+
+  if (t.writable) {
+    const c = document.createElement("td"); c.className = "chk";
+    c.innerHTML = '<input type="checkbox" class="rowchk">';
+    tr.appendChild(c);
+  }
+
+  t.columns.forEach(function (col) {
+    const td = document.createElement("td");
+    const editable = t.writable && !col.isPk;
+    let inp;
+
+    if (col.type === "boolean") {
+      inp = document.createElement("select");
+      ["true", "false", ""].forEach(function (v) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v === "" ? "(boş)" : v;
+        inp.appendChild(o);
+      });
+      inp.value = row[col.name] === null || row[col.name] === undefined
+        ? "" : String(row[col.name]);
+    } else {
+      inp = document.createElement("input");
+      const isNum = ["integer", "bigint", "numeric", "double precision", "real", "smallint"]
+        .indexOf(col.type) !== -1;
+      inp.type = isNum ? "number" : "text";
+      if (isNum) inp.step = "any";
+      inp.value = row[col.name] === null || row[col.name] === undefined
+        ? "" : String(row[col.name]);
+      inp.placeholder = col.nullable ? "(boş = null)" : "";
+    }
+
+    if (!editable) inp.readOnly = true;
+    inp.dataset.col = col.name;
+
+    if (editable) {
+      inp.addEventListener("input", function () {
+        if (!state.dirty[idx]) state.dirty[idx] = {};
+        const raw = inp.value;
+        state.dirty[idx][col.name] = raw === "" ? null
+          : (inp.type === "number" ? Number(raw)
+            : (col.type === "boolean" ? raw === "true" : raw));
+        tr.classList.remove("saved"); tr.classList.add("dirty");
+      });
+    }
+    td.appendChild(inp); tr.appendChild(td);
+  });
+
+  if (t.writable) {
+    const td = document.createElement("td"); td.className = "act";
+    const save = document.createElement("button");
+    save.className = "primary tiny"; save.textContent = "Kaydet";
+    save.addEventListener("click", function () { saveRow(idx, tr); });
+
+    const del = document.createElement("button");
+    del.className = "danger tiny"; del.textContent = "Sil";
+    del.style.marginLeft = "6px";
+    del.addEventListener("click", function () { deleteRow(idx); });
+
+    td.appendChild(save); td.appendChild(del); tr.appendChild(td);
+  }
+  return tr;
+}
+
+function pkOf(row) {
+  const o = {};
+  state.current.pk.forEach(function (c) { o[c.name] = row[c.name]; });
+  return o;
+}
+
+async function saveRow(idx, tr) {
+  const patch = state.dirty[idx];
+  if (!patch || !Object.keys(patch).length) { log("bu satırda değişiklik yok"); return; }
+  try {
+    await api.update(state.current.name, pkOf(state.rows[idx]), patch);
+    Object.assign(state.rows[idx], patch);
+    delete state.dirty[idx];
+    tr.classList.remove("dirty"); tr.classList.add("saved");
+    log("kaydedildi: " + Object.keys(patch).join(", "), "ok");
+  } catch (e) {
+    log("kaydedilemedi — " + e.message, "err");
+  }
+}
+
+async function deleteRow(idx) {
+  const row = state.rows[idx];
+  const label = state.current.pk.map(function (c) {
+    return c.name + "=" + row[c.name];
+  }).join(", ");
+  if (!confirm("Bu satır kalıcı olarak silinecek:\n" + label + "\n\nGeri alınamaz.")) return;
+  try {
+    await api.remove(state.current.name, pkOf(row));
+    log("silindi: " + label, "ok");
+    loadRows();
+  } catch (e) {
+    log("silinemedi — " + e.message, "err");
+  }
+}
+
+/* ---------- Yeni satır ---------- */
+
+el("btnNew").addEventListener("click", function () {
+  const t = state.current;
+  el("sheetTitle").textContent = t.name + " — yeni satır";
+  const body = el("sheetBody"); body.innerHTML = "";
+
+  t.columns.forEach(function (col) {
+    if (col.isPk && col.type !== "text" && col.type !== "uuid") return; // otomatik anahtar
+    const d = document.createElement("div"); d.className = "fld";
+    d.innerHTML = "<label>" + escapeHtml(col.name) + " · " + escapeHtml(col.type) +
+      (col.nullable ? "" : " · zorunlu") + "</label>";
+    const i = document.createElement("input");
+    i.dataset.col = col.name;
+    i.placeholder = col.nullable ? "(boş bırakılabilir)" : "zorunlu";
+    d.appendChild(i); body.appendChild(d);
+  });
+
+  el("sheet").classList.add("show");
+  el("sheetSave").onclick = insertRow;
+});
+
+async function insertRow() {
+  const row = {};
+  el("sheetBody").querySelectorAll("input[data-col]").forEach(function (i) {
+    if (i.value !== "") row[i.dataset.col] = i.value;
+  });
+  if (!Object.keys(row).length) { log("boş satır eklenemez", "err"); return; }
+  try {
+    await api.insert(state.current.name, row);
+    el("sheet").classList.remove("show");
+    log("satır eklendi", "ok");
+    loadRows();
+  } catch (e) {
+    log("eklenemedi — " + e.message, "err");
+  }
+}
+
+/* ---------- Toplu değiştir ---------- */
+
+el("btnBulk").addEventListener("click", function () {
+  const checked = Array.prototype.filter.call(
+    document.querySelectorAll(".rowchk"), function (c) { return c.checked; });
+  if (!checked.length) { log("önce sol taraftaki kutulardan satır seç", "err"); return; }
+
+  el("sheetTitle").textContent = checked.length + " satırda tek kolonu değiştir";
+  const body = el("sheetBody");
+  body.innerHTML = '<div class="fld"><label>Kolon</label><select id="bCol"></select></div>' +
+                   '<div class="fld"><label>Yeni değer</label>' +
+                   '<input id="bVal" placeholder="(boş = null)"></div>';
+  const sel = body.querySelector("#bCol");
+  state.current.columns.forEach(function (c) {
+    if (c.isPk) return;
+    const o = document.createElement("option");
+    o.value = c.name; o.textContent = c.name; sel.appendChild(o);
+  });
+
+  el("sheet").classList.add("show");
+  el("sheetSave").onclick = async function () {
+    const col = body.querySelector("#bCol").value;
+    const raw = body.querySelector("#bVal").value;
+    const val = raw === "" ? null : raw;
+    let ok = 0, fail = 0;
+    for (const chk of checked) {
+      const idx = parseInt(chk.closest("tr").dataset.idx, 10);
+      const patch = {}; patch[col] = val;
+      try { await api.update(state.current.name, pkOf(state.rows[idx]), patch); ok++; }
+      catch (e) { fail++; }
+    }
+    el("sheet").classList.remove("show");
+    log("toplu değişiklik — " + ok + " başarılı, " + fail + " hatalı",
+        fail ? "err" : "ok");
+    loadRows();
+  };
+});
+
+el("sheetCancel").addEventListener("click", function () {
+  el("sheet").classList.remove("show");
+});
+el("sheet").addEventListener("click", function (e) {
+  if (e.target === el("sheet")) el("sheet").classList.remove("show");
+});
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") el("sheet").classList.remove("show");
+});
+
+/* ==========================================================================
+   MAÇ EDİTÖRÜ
+   Genel tablo editöründen ayrı, maça özel bir ekran: takım adıyla ara,
+   maçı seç, kanal/platform/tarih/saati okunabilir bir formda düzenle.
+   Aynı `api` katmanını (bağlantı, token, headers) kullanır — ayrı bir
+   bağlantı gerektirmez. Saat/tarih Türkiye yerel saatine (UTC+3, DST yok)
+   göre gösterilir ve kaydedilirken UTC'ye çevrilir; tarayıcının kendi
+   saat dilimine bağlı DEĞİLDİR (Date.UTC ile elle hesaplanır).
+   ========================================================================== */
+
+const TR_OFFSET_MS = 3 * 60 * 60 * 1000;
+
+function pad2(n) { return String(n).padStart(2, "0"); }
+
+/** ISO UTC timestamp -> Türkiye yerel {date:"YYYY-MM-DD", time:"HH:MM"} */
+function utcToTurkeyParts(isoUtc) {
+  const t = new Date(new Date(isoUtc).getTime() + TR_OFFSET_MS);
+  return {
+    date: t.getUTCFullYear() + "-" + pad2(t.getUTCMonth() + 1) + "-" + pad2(t.getUTCDate()),
+    time: pad2(t.getUTCHours()) + ":" + pad2(t.getUTCMinutes())
+  };
+}
+
+/** Türkiye yerel {date, time} -> ISO UTC timestamp (fixtures.kickoff_at için) */
+function turkeyPartsToUtcIso(dateStr, timeStr) {
+  const parts = dateStr.split("-").map(Number);
+  const hm = timeStr.split(":").map(Number);
+  const turkeyMs = Date.UTC(parts[0], parts[1] - 1, parts[2], hm[0], hm[1], 0);
+  return new Date(turkeyMs - TR_OFFSET_MS).toISOString();
+}
+
+function formatTurkeyDateLabel(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "short", weekday: "short", timeZone: "UTC" });
+}
+
+const matchEditor = { results: [], current: null };
+
+el("tabGeneric").addEventListener("click", function () { switchView("tables"); });
+el("tabMatch").addEventListener("click", function () { switchView("match"); });
+
+function switchView(which) {
+  const isTables = which === "tables";
+  el("viewTables").style.display = isTables ? "flex" : "none";
+  el("viewMatchEditor").style.display = isTables ? "none" : "flex";
+  el("tabGeneric").classList.toggle("active", isTables);
+  el("tabMatch").classList.toggle("active", !isTables);
+}
+
+el("meSearchBtn").addEventListener("click", searchMatches);
+el("meQuery").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") searchMatches();
+});
+
+async function searchMatches() {
+  const q = el("meQuery").value.trim();
+  if (!q) { log("bir takım adı yaz", "err"); return; }
+  const body = el("meBody");
+  body.innerHTML = '<div class="empty">Aranıyor…</div>';
+  try {
+    const params = new URLSearchParams();
+    params.set("select", "id,competition_key,home_team,away_team,kickoff_at,channel,platform,status");
+    params.set("or", "(home_team.ilike.*" + q + "*,away_team.ilike.*" + q + "*)");
+    params.set("order", "kickoff_at.asc");
+    params.set("limit", "25");
+    const r = await fetch(api.url + "/rest/v1/fixtures_with_channel?" + params.toString(),
+                          { headers: api.headers() });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.message || "arama başarısız");
+    matchEditor.results = j;
+    renderMatchResults();
+    log(q + " için " + j.length + " maç bulundu", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Arama başarısız</strong>' + escapeHtml(e.message) + "</div>";
+    log("maç araması hatası — " + e.message, "err");
+  }
+}
+
+function renderMatchResults() {
+  const body = el("meBody");
+  if (!matchEditor.results.length) {
+    body.innerHTML = '<div class="empty"><strong>Sonuç yok</strong>Başka bir takım adı dene.</div>';
+    return;
+  }
+  body.innerHTML = "";
+  matchEditor.results.forEach(function (m) {
+    const parts = utcToTurkeyParts(m.kickoff_at);
+    const d = document.createElement("div");
+    d.className = "me-result";
+    d.innerHTML =
+      '<div><div class="teams">' + escapeHtml(m.home_team) + " – " + escapeHtml(m.away_team) + "</div></div>" +
+      '<div class="when">' + formatTurkeyDateLabel(parts.date) + " · " + parts.time + "</div>";
+    d.addEventListener("click", function () { openMatchForm(m); });
+    body.appendChild(d);
+  });
+}
+
+function openMatchForm(m) {
+  matchEditor.current = m;
+  const parts = utcToTurkeyParts(m.kickoff_at);
+  const body = el("meBody");
+  body.innerHTML =
+    '<div class="me-back"><button id="meBackBtn">‹ Sonuçlara dön</button></div>' +
+    '<div class="me-card">' +
+      '<div class="me-teams">' + escapeHtml(m.home_team) + " – " + escapeHtml(m.away_team) + "</div>" +
+      '<div class="me-sub">fixture id ' + m.id + " · " + escapeHtml(m.competition_key || "") + "</div>" +
+      '<div class="me-row">' +
+        '<div class="fld"><label for="meChannel">Kanal</label>' +
+        '<input id="meChannel" value="' + escapeHtml(m.channel || "") + '" placeholder="(boş bırakılabilir)"></div>' +
+        '<div class="fld"><label for="mePlatform">Platform</label>' +
+        '<input id="mePlatform" value="' + escapeHtml(m.platform || "") + '" placeholder="(boş bırakılabilir)"></div>' +
+      "</div>" +
+      '<div class="me-row">' +
+        '<div class="fld"><label for="meDate">Tarih</label>' +
+        '<input id="meDate" type="date" value="' + parts.date + '"></div>' +
+        '<div class="fld"><label for="meTime">Saat (TSİ)</label>' +
+        '<input id="meTime" type="time" value="' + parts.time + '"></div>' +
+      "</div>" +
+      '<div class="me-actions">' +
+        '<button class="primary" id="meSaveBtn">Kaydet</button>' +
+        '<span class="me-status" id="meStatus"></span>' +
+      "</div>" +
+    "</div>";
+  el("meBackBtn").addEventListener("click", renderMatchResults);
+  el("meSaveBtn").addEventListener("click", saveMatchForm);
+}
+
+async function saveMatchForm() {
+  const m = matchEditor.current;
+  const status = el("meStatus");
+  status.className = "me-status"; status.textContent = "kaydediliyor…";
+
+  if (!api.token) {
+    status.className = "me-status err";
+    status.textContent = "giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan";
+    return;
+  }
+
+  const channel = el("meChannel").value.trim();
+  const platform = el("mePlatform").value.trim();
+  const dateStr = el("meDate").value;
+  const timeStr = el("meTime").value;
+  const kickoffIso = turkeyPartsToUtcIso(dateStr, timeStr);
+
+  try {
+    // 1) fixtures.kickoff_at güncelle
+    const rFix = await fetch(api.url + "/rest/v1/fixtures?id=eq." + m.id, {
+      method: "PATCH",
+      headers: api.headers({ "Prefer": "return=representation" }),
+      body: JSON.stringify({ kickoff_at: kickoffIso })
+    });
+    const jFix = await rFix.json();
+    if (!rFix.ok) throw new Error((jFix && jFix.message) || "kickoff güncellenemedi");
+
+    // 2) channel_mappings upsert (fixture_id üzerinden — satır olmayabilir)
+    const rChan = await fetch(api.url + "/rest/v1/channel_mappings?on_conflict=fixture_id", {
+      method: "POST",
+      headers: api.headers({ "Prefer": "resolution=merge-duplicates,return=representation" }),
+      body: JSON.stringify({
+        fixture_id: m.id,
+        channel: channel || null,
+        platform: platform || null
+      })
+    });
+    const jChan = await rChan.json();
+    if (!rChan.ok) throw new Error((jChan && jChan.message) || "kanal güncellenemedi");
+
+    status.className = "me-status ok"; status.textContent = "kaydedildi ✓";
+    log(m.home_team + " – " + m.away_team + " güncellendi: " + channel + " · " + dateStr + " " + timeStr, "ok");
+
+    // Yerel görünümü de güncelle
+    matchEditor.current = Object.assign({}, m, { kickoff_at: kickoffIso, channel, platform });
+  } catch (e) {
+    status.className = "me-status err"; status.textContent = "hata: " + e.message;
+    log("maç kaydedilemedi — " + e.message, "err");
+  }
+}
+
+log("panel hazır — anon anahtarını yapıştır ve bağlan");
+</script>
+</body>
+</html>
