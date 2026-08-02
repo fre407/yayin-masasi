@@ -563,6 +563,10 @@
       <div class="me-row">
         <div class="fld"><label for="nmChannel">Kanal (opsiyonel)</label>
         <input id="nmChannel" placeholder="(boş bırakılabilir)"></div>
+        <div class="fld"><label for="nmChannel2">Kanal 2 (opsiyonel)</label>
+        <input id="nmChannel2" placeholder="(ikinci kanal varsa)"></div>
+      </div>
+      <div class="me-row">
         <div class="fld"><label for="nmPlatform">Platform (opsiyonel)</label>
         <input id="nmPlatform" placeholder="(boş bırakılabilir)"></div>
       </div>
@@ -1207,7 +1211,7 @@ async function searchMatches() {
   body.innerHTML = '<div class="empty">Aranıyor…</div>';
   try {
     const params = new URLSearchParams();
-    params.set("select", "id,competition_key,home_team,away_team,kickoff_at,channel,platform,status");
+    params.set("select", "id,competition_key,home_team,away_team,kickoff_at,channel,channel2,platform,status");
     params.set("or", "(home_team.ilike.*" + q + "*,away_team.ilike.*" + q + "*)");
     params.set("order", "kickoff_at.asc");
     params.set("limit", "25");
@@ -1255,6 +1259,10 @@ function openMatchForm(m) {
       '<div class="me-row">' +
         '<div class="fld"><label for="meChannel">Kanal</label>' +
         '<input id="meChannel" value="' + escapeHtml(m.channel || "") + '" placeholder="(boş bırakılabilir)"></div>' +
+        '<div class="fld"><label for="meChannel2">Kanal 2</label>' +
+        '<input id="meChannel2" value="' + escapeHtml(m.channel2 || "") + '" placeholder="(ikinci kanal varsa)"></div>' +
+      "</div>" +
+      '<div class="me-row">' +
         '<div class="fld"><label for="mePlatform">Platform</label>' +
         '<input id="mePlatform" value="' + escapeHtml(m.platform || "") + '" placeholder="(boş bırakılabilir)"></div>' +
       "</div>" +
@@ -1285,6 +1293,7 @@ async function saveMatchForm() {
   }
 
   const channel = el("meChannel").value.trim();
+  const channel2 = el("meChannel2").value.trim();
   const platform = el("mePlatform").value.trim();
   const dateStr = el("meDate").value;
   const timeStr = el("meTime").value;
@@ -1307,6 +1316,7 @@ async function saveMatchForm() {
       body: JSON.stringify({
         fixture_id: m.id,
         channel: channel || null,
+        channel2: channel2 || null,
         platform: platform || null
       })
     });
@@ -1314,10 +1324,10 @@ async function saveMatchForm() {
     if (!rChan.ok) throw new Error((jChan && jChan.message) || "kanal güncellenemedi");
 
     status.className = "me-status ok"; status.textContent = "kaydedildi ✓";
-    log(m.home_team + " – " + m.away_team + " güncellendi: " + channel + " · " + dateStr + " " + timeStr, "ok");
+    log(m.home_team + " – " + m.away_team + " güncellendi: " + channel + (channel2 ? " + " + channel2 : "") + " · " + dateStr + " " + timeStr, "ok");
 
     // Yerel görünümü de güncelle
-    matchEditor.current = Object.assign({}, m, { kickoff_at: kickoffIso, channel, platform });
+    matchEditor.current = Object.assign({}, m, { kickoff_at: kickoffIso, channel, channel2, platform });
   } catch (e) {
     status.className = "me-status err"; status.textContent = "hata: " + e.message;
     log("maç kaydedilemedi — " + e.message, "err");
@@ -1482,6 +1492,7 @@ async function saveNewMatch() {
   const dateStr = el("nmDate").value;
   const timeStr = el("nmTime").value;
   const channel = el("nmChannel").value.trim();
+  const channel2 = el("nmChannel2").value.trim();
   const platform = el("nmPlatform").value.trim();
 
   if (!home || !away || !comp || !dateStr || !timeStr) {
@@ -1506,11 +1517,11 @@ async function saveNewMatch() {
     const jFix = await rFix.json();
     if (!rFix.ok) throw new Error((jFix && (jFix.message || jFix.hint)) || "maç eklenemedi");
 
-    if (channel || platform) {
+    if (channel || channel2 || platform) {
       const rChan = await fetch(api.url + "/rest/v1/channel_mappings?on_conflict=fixture_id", {
         method: "POST",
         headers: api.headers({ "Prefer": "resolution=merge-duplicates,return=representation" }),
-        body: JSON.stringify({ fixture_id: id, channel: channel || null, platform: platform || null })
+        body: JSON.stringify({ fixture_id: id, channel: channel || null, channel2: channel2 || null, platform: platform || null })
       });
       const jChan = await rChan.json();
       if (!rChan.ok) throw new Error((jChan && jChan.message) || "kanal kaydedilemedi (maç yine de eklendi)");
@@ -1518,7 +1529,7 @@ async function saveNewMatch() {
 
     status.className = "me-status ok"; status.textContent = "eklendi ✓ (id " + id + ")";
     log("yeni maç eklendi: " + home + " – " + away + " · " + dateStr + " " + timeStr, "ok");
-    ["nmHome", "nmAway", "nmComp", "nmDate", "nmTime", "nmChannel", "nmPlatform"].forEach(function (fid) {
+    ["nmHome", "nmAway", "nmComp", "nmDate", "nmTime", "nmChannel", "nmChannel2", "nmPlatform"].forEach(function (fid) {
       el(fid).value = "";
     });
   } catch (e) {
