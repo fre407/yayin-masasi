@@ -343,6 +343,57 @@
   .me-status.ok { color: var(--ok); }
   .me-status.err { color: var(--danger); }
 
+  /* ---------- Günlük Maçlar ---------- */
+
+  .daily-toolbar {
+    display: flex; align-items: center; gap: 10px;
+    max-width: 720px; margin-bottom: 16px;
+  }
+  .daily-pills {
+    display: flex; gap: 6px; overflow-x: auto; flex: 1;
+    padding-bottom: 4px;
+  }
+  .daily-pill {
+    flex-shrink: 0; background: var(--surface-input);
+    border: 1px solid var(--line-bright); color: var(--ink-dim);
+    font-family: var(--mono); font-size: 11px;
+    padding: 7px 11px; border-radius: 999px; cursor: pointer;
+    white-space: nowrap;
+  }
+  .daily-pill:hover { border-color: var(--signal); color: var(--signal); }
+  .daily-pill .cnt { color: var(--ink-faint); margin-left: 4px; }
+
+  .daily-day { margin-bottom: 22px; scroll-margin-top: 12px; }
+  .daily-day-head {
+    font-size: 13px; font-weight: 700; margin-bottom: 8px;
+    padding-bottom: 6px; border-bottom: 1px solid var(--line);
+  }
+  .daily-row {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 9px 11px; margin-bottom: 5px;
+    background: var(--surface-raised); border: 1px solid var(--line);
+    border-radius: 4px;
+  }
+  .daily-row .teams { font-weight: 600; font-size: 12.5px; }
+  .daily-row .meta { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; }
+  .daily-row .when { font-family: var(--mono); font-size: 11px; color: var(--ink-dim); white-space: nowrap; }
+
+  /* ---------- Yayın Durumu / Liderlik listeleri ---------- */
+
+  .list-row {
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 10px 12px; margin-bottom: 6px;
+    background: var(--surface-raised); border: 1px solid var(--line);
+    border-radius: 4px; flex-wrap: wrap;
+  }
+  .list-row .main-txt { font-weight: 600; font-size: 12.5px; }
+  .list-row .sub-txt { font-family: var(--mono); font-size: 10.5px; color: var(--ink-faint); margin-top: 2px; }
+  .list-row .actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .rank-badge {
+    font-family: var(--mono); font-size: 11px; color: var(--signal);
+    min-width: 26px; display: inline-block;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; animation: none !important; }
     .onair.live, tr.dirty td.rail { box-shadow: none; }
@@ -385,6 +436,11 @@
   <div class="tabs" id="tabs" style="display:none">
     <button class="tab-btn active" id="tabGeneric" type="button">Genel Tablo Editörü</button>
     <button class="tab-btn" id="tabMatch" type="button">Maç Editörü</button>
+    <button class="tab-btn" id="tabDaily" type="button">Günlük Maçlar</button>
+    <button class="tab-btn" id="tabNewMatch" type="button">Yeni Maç Ekle</button>
+    <button class="tab-btn" id="tabBroadcast" type="button">Yayın Durumu</button>
+    <button class="tab-btn" id="tabSync" type="button">Senkronizasyon</button>
+    <button class="tab-btn" id="tabLeaderboard" type="button">Liderlik Moderasyonu</button>
   </div>
 </header>
 
@@ -459,6 +515,98 @@
         <strong>Bir maç ara</strong>
         Yukarıdan bir takım adı yaz ve <code>Ara</code>'ya bas.
       </div>
+    </div>
+  </section>
+</main>
+
+<main id="viewDaily" style="display:none">
+  <section class="work me-work">
+    <div class="daily-toolbar">
+      <div class="daily-pills" id="dailyPills"></div>
+      <button id="dailyRefreshBtn" class="tiny">Yenile</button>
+    </div>
+    <div id="dailyBody" class="me-body" style="max-width:720px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewNewMatch" style="display:none">
+  <section class="work me-work">
+    <div class="me-card" style="max-width:560px">
+      <div class="me-sub" style="margin-bottom:14px">Sadece bu formdan eklenen maçlar hedeflenir — API-Football/sitemap hiç yakalamadıysa (ör. küçük bir hazırlık maçı) buradan elle ekle.</div>
+      <div class="me-row">
+        <div class="fld"><label for="nmHome">Ev sahibi takım</label>
+        <input id="nmHome" placeholder="ör. Galatasaray"></div>
+        <div class="fld"><label for="nmAway">Deplasman takımı</label>
+        <input id="nmAway" placeholder="ör. Fenerbahçe"></div>
+      </div>
+      <div class="me-row">
+        <div class="fld"><label for="nmComp">Lig / turnuva anahtarı</label>
+        <input id="nmComp" list="nmCompList" placeholder="ör. hazirlik_maci">
+        <datalist id="nmCompList">
+          <option value="super_lig"><option value="tff_1_lig"><option value="turkiye_kupasi">
+          <option value="premier_lig"><option value="championship"><option value="league_one"><option value="fa_cup">
+          <option value="la_liga"><option value="serie_a"><option value="bundesliga"><option value="ligue_1">
+          <option value="eredivisie"><option value="primeira_liga">
+          <option value="sampiyonlar_ligi"><option value="avrupa_ligi"><option value="konferans_ligi">
+          <option value="dunya_kupasi"><option value="euro"><option value="uluslar_ligi">
+          <option value="hazirlik_maci">
+        </datalist></div>
+      </div>
+      <div class="me-row">
+        <div class="fld"><label for="nmDate">Tarih</label>
+        <input id="nmDate" type="date"></div>
+        <div class="fld"><label for="nmTime">Saat (TSİ)</label>
+        <input id="nmTime" type="time"></div>
+      </div>
+      <div class="me-row">
+        <div class="fld"><label for="nmChannel">Kanal (opsiyonel)</label>
+        <input id="nmChannel" placeholder="(boş bırakılabilir)"></div>
+        <div class="fld"><label for="nmPlatform">Platform (opsiyonel)</label>
+        <input id="nmPlatform" placeholder="(boş bırakılabilir)"></div>
+      </div>
+      <div class="me-actions">
+        <button class="primary" id="nmSaveBtn">Maçı Ekle</button>
+        <span class="me-status" id="nmStatus"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<main id="viewBroadcast" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">"Yayınlanmıyor" olarak kesinleşmiş tüm maçlar. Otomasyon yanlış karar verdiyse "Geri Al" ile tekrar "bilinmiyor" durumuna döner (bir sonraki senkronizasyon yeniden değerlendirir).</div>
+    <button id="broadcastRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="broadcastBody" class="me-body" style="max-width:720px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewSync" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">12 saatlik otomatik döngüyü beklemeden senkron fonksiyonlarını şimdi elle çalıştır. sync-fixtures-sitemap birkaç dakika sürebilir.</div>
+    <div class="me-card" style="max-width:560px">
+      <div class="me-actions" style="flex-wrap:wrap">
+        <button class="primary" id="syncFixturesBtn">sync-fixtures Çalıştır</button>
+        <button class="primary" id="syncSitemapBtn">sync-fixtures-sitemap Çalıştır</button>
+        <button class="primary" id="syncChannelsBtn">sync-channels Çalıştır</button>
+      </div>
+      <div class="me-actions" style="margin-top:10px">
+        <button id="syncAllBtn">Tümünü Sırayla Çalıştır</button>
+        <span class="me-status" id="syncStatus"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<main id="viewLeaderboard" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Futbol IQ liderlik tablosu (tüm zamanlar). Uygunsuz takma adları veya şüpheli XP kayıtlarını buradan kaldırabilirsin — silme kalıcıdır.</div>
+    <button id="lbRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="lbBody" class="me-body" style="max-width:760px">
+      <div class="empty">Yükleniyor…</div>
     </div>
   </section>
 </main>
@@ -1013,16 +1161,39 @@ function formatTurkeyDateLabel(dateStr) {
 
 const matchEditor = { results: [], current: null };
 
-el("tabGeneric").addEventListener("click", function () { switchView("tables"); });
-el("tabMatch").addEventListener("click", function () { switchView("match"); });
+const VIEW_IDS = {
+  tables: "viewTables", match: "viewMatchEditor", daily: "viewDaily",
+  newmatch: "viewNewMatch", broadcast: "viewBroadcast", sync: "viewSync",
+  leaderboard: "viewLeaderboard"
+};
+const TAB_IDS = {
+  tables: "tabGeneric", match: "tabMatch", daily: "tabDaily",
+  newmatch: "tabNewMatch", broadcast: "tabBroadcast", sync: "tabSync",
+  leaderboard: "tabLeaderboard"
+};
+// Sekme ilk kez açıldığında otomatik veri çeken görünümler (lazy-load) —
+// her seferinde en güncel veriyi görsün diye HER tıklamada yeniden çeker,
+// state tutup "zaten yüklendi" diye atlamaz (veri başka sekmeden — ör. Maç
+// Editörü — değişmiş olabilir).
+const VIEW_ON_ENTER = {
+  daily: loadDailyMatches, broadcast: loadBroadcastDashboard, leaderboard: loadLeaderboard
+};
 
 function switchView(which) {
-  const isTables = which === "tables";
-  el("viewTables").style.display = isTables ? "flex" : "none";
-  el("viewMatchEditor").style.display = isTables ? "none" : "flex";
-  el("tabGeneric").classList.toggle("active", isTables);
-  el("tabMatch").classList.toggle("active", !isTables);
+  Object.keys(VIEW_IDS).forEach(function (key) {
+    el(VIEW_IDS[key]).style.display = key === which ? "flex" : "none";
+    el(TAB_IDS[key]).classList.toggle("active", key === which);
+  });
+  if (VIEW_ON_ENTER[which]) VIEW_ON_ENTER[which]();
 }
+
+el("tabGeneric").addEventListener("click", function () { switchView("tables"); });
+el("tabMatch").addEventListener("click", function () { switchView("match"); });
+el("tabDaily").addEventListener("click", function () { switchView("daily"); });
+el("tabNewMatch").addEventListener("click", function () { switchView("newmatch"); });
+el("tabBroadcast").addEventListener("click", function () { switchView("broadcast"); });
+el("tabSync").addEventListener("click", function () { switchView("sync"); });
+el("tabLeaderboard").addEventListener("click", function () { switchView("leaderboard"); });
 
 el("meSearchBtn").addEventListener("click", searchMatches);
 el("meQuery").addEventListener("keydown", function (e) {
@@ -1150,6 +1321,420 @@ async function saveMatchForm() {
   } catch (e) {
     status.className = "me-status err"; status.textContent = "hata: " + e.message;
     log("maç kaydedilemedi — " + e.message, "err");
+  }
+}
+
+/* ==========================================================================
+   GÜNLÜK MAÇLAR
+   Bugünden itibaren DAILY_DAYS_AHEAD gün ileriye kadar tüm maçları TR yerel
+   tarihine göre gruplar. Üstteki tarih rozetlerine tıklamak ilgili güne
+   kaydırır (anchor scroll). Her satırın "Düzenle" butonu doğrudan Maç
+   Editörü'nü o maçla açar — aynı fixtures_with_channel satır şekli
+   olduğundan openMatchForm'u değişiklik yapmadan yeniden kullanır.
+   ========================================================================== */
+
+const DAILY_DAYS_AHEAD = 10;
+
+function todayTrDateStr() {
+  return utcToTurkeyParts(new Date().toISOString()).date;
+}
+
+function addDaysToTrDateStr(dateStr, days) {
+  const parts = dateStr.split("-").map(Number);
+  const d = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2]));
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
+}
+
+el("dailyRefreshBtn").addEventListener("click", loadDailyMatches);
+
+async function loadDailyMatches() {
+  const body = el("dailyBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  el("dailyPills").innerHTML = "";
+
+  const startDate = todayTrDateStr();
+  const endDate = addDaysToTrDateStr(startDate, DAILY_DAYS_AHEAD);
+  const startIso = turkeyPartsToUtcIso(startDate, "00:00");
+  const endIso = turkeyPartsToUtcIso(endDate, "23:59");
+
+  try {
+    const params = new URLSearchParams();
+    params.set("select", "id,competition_key,home_team,away_team,kickoff_at,channel,platform,status,confirmed_unavailable");
+    params.set("kickoff_at", "gte." + startIso);
+    params.append("kickoff_at", "lte." + endIso);
+    params.set("order", "kickoff_at.asc");
+    params.set("limit", "1000");
+    const r = await fetch(api.url + "/rest/v1/fixtures_with_channel?" + params.toString(),
+                          { headers: api.headers() });
+    const rows = await r.json();
+    if (!r.ok) throw new Error(rows.message || "günlük maçlar okunamadı");
+
+    // TR yerel tarihine göre grupla.
+    const byDate = {};
+    rows.forEach(function (m) {
+      const d = utcToTurkeyParts(m.kickoff_at).date;
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d].push(m);
+    });
+
+    // Pill'ler: startDate..endDate arası HER gün (maçı olmasa bile), böylece
+    // "bu gün boş" bilgisi de görülebilir.
+    const pillsBox = el("dailyPills");
+    pillsBox.innerHTML = "";
+    let cursor = startDate;
+    for (let i = 0; i <= DAILY_DAYS_AHEAD; i++) {
+      const count = (byDate[cursor] || []).length;
+      const pill = document.createElement("button");
+      pill.type = "button"; pill.className = "daily-pill";
+      pill.innerHTML = formatTurkeyDateLabel(cursor) + '<span class="cnt">' + count + "</span>";
+      const targetDate = cursor;
+      pill.addEventListener("click", function () {
+        const target = document.getElementById("day-" + targetDate);
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+      pillsBox.appendChild(pill);
+      cursor = addDaysToTrDateStr(cursor, 1);
+    }
+
+    // Gün bölümleri.
+    body.innerHTML = "";
+    cursor = startDate;
+    for (let i = 0; i <= DAILY_DAYS_AHEAD; i++) {
+      const dayMatches = byDate[cursor] || [];
+      const sec = document.createElement("div");
+      sec.className = "daily-day"; sec.id = "day-" + cursor;
+      sec.innerHTML = '<div class="daily-day-head">' + formatTurkeyDateLabel(cursor) +
+        " · " + dayMatches.length + " maç</div>";
+      if (!dayMatches.length) {
+        const empty = document.createElement("div");
+        empty.className = "me-sub"; empty.textContent = "Bu gün için maç yok.";
+        sec.appendChild(empty);
+      } else {
+        dayMatches.forEach(function (m) {
+          sec.appendChild(buildDailyRow(m));
+        });
+      }
+      body.appendChild(sec);
+      cursor = addDaysToTrDateStr(cursor, 1);
+    }
+
+    log(rows.length + " maç (" + startDate + " → " + endDate + ")", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) + "</div>";
+    log("günlük maçlar hatası — " + e.message, "err");
+  }
+}
+
+function channelBadge(m) {
+  if (m.channel) return m.channel;
+  if (m.platform) return m.platform;
+  if (m.confirmed_unavailable) return "Yayınlanmıyor";
+  return "kanal bekleniyor";
+}
+
+function buildDailyRow(m) {
+  const parts = utcToTurkeyParts(m.kickoff_at);
+  const row = document.createElement("div");
+  row.className = "daily-row";
+  row.innerHTML =
+    '<div><div class="teams">' + escapeHtml(m.home_team) + " – " + escapeHtml(m.away_team) + "</div>" +
+    '<div class="meta">' + escapeHtml(m.competition_key || "") + " · " + escapeHtml(channelBadge(m)) + "</div></div>" +
+    '<div style="display:flex;align-items:center;gap:10px">' +
+    '<div class="when">' + parts.time + "</div></div>";
+  const editBtn = document.createElement("button");
+  editBtn.className = "tiny"; editBtn.textContent = "Düzenle";
+  editBtn.addEventListener("click", function () {
+    switchView("match");
+    openMatchForm(m);
+  });
+  row.lastElementChild.appendChild(editBtn);
+  return row;
+}
+
+/* ==========================================================================
+   YENİ MAÇ EKLE
+   fixtures'a elle bir satır ekler. API-Football'ın pozitif id'leri ve
+   sitemap senkronunun negatif-sporekrani-id'leriyle KESİNLİKLE çakışmaması
+   için çok büyük, zaman damgası tabanlı bir negatif id üretir (bkz.
+   manualFixtureId).
+   ========================================================================== */
+
+function manualFixtureId() {
+  return -(9000000000000 + Date.now());
+}
+
+el("nmSaveBtn").addEventListener("click", saveNewMatch);
+
+async function saveNewMatch() {
+  const status = el("nmStatus");
+  status.className = "me-status"; status.textContent = "";
+
+  if (!api.token) {
+    status.className = "me-status err";
+    status.textContent = "giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan";
+    return;
+  }
+
+  const home = el("nmHome").value.trim();
+  const away = el("nmAway").value.trim();
+  const comp = el("nmComp").value.trim();
+  const dateStr = el("nmDate").value;
+  const timeStr = el("nmTime").value;
+  const channel = el("nmChannel").value.trim();
+  const platform = el("nmPlatform").value.trim();
+
+  if (!home || !away || !comp || !dateStr || !timeStr) {
+    status.className = "me-status err";
+    status.textContent = "takım adları, lig anahtarı, tarih ve saat zorunlu";
+    return;
+  }
+
+  status.textContent = "ekleniyor…";
+  const id = manualFixtureId();
+  const kickoffIso = turkeyPartsToUtcIso(dateStr, timeStr);
+
+  try {
+    const rFix = await fetch(api.url + "/rest/v1/fixtures", {
+      method: "POST",
+      headers: api.headers({ "Prefer": "return=representation" }),
+      body: JSON.stringify({
+        id: id, competition_key: comp, home_team: home, away_team: away,
+        kickoff_at: kickoffIso
+      })
+    });
+    const jFix = await rFix.json();
+    if (!rFix.ok) throw new Error((jFix && (jFix.message || jFix.hint)) || "maç eklenemedi");
+
+    if (channel || platform) {
+      const rChan = await fetch(api.url + "/rest/v1/channel_mappings?on_conflict=fixture_id", {
+        method: "POST",
+        headers: api.headers({ "Prefer": "resolution=merge-duplicates,return=representation" }),
+        body: JSON.stringify({ fixture_id: id, channel: channel || null, platform: platform || null })
+      });
+      const jChan = await rChan.json();
+      if (!rChan.ok) throw new Error((jChan && jChan.message) || "kanal kaydedilemedi (maç yine de eklendi)");
+    }
+
+    status.className = "me-status ok"; status.textContent = "eklendi ✓ (id " + id + ")";
+    log("yeni maç eklendi: " + home + " – " + away + " · " + dateStr + " " + timeStr, "ok");
+    ["nmHome", "nmAway", "nmComp", "nmDate", "nmTime", "nmChannel", "nmPlatform"].forEach(function (fid) {
+      el(fid).value = "";
+    });
+  } catch (e) {
+    status.className = "me-status err"; status.textContent = "hata: " + e.message;
+    log("yeni maç eklenemedi — " + e.message, "err");
+  }
+}
+
+/* ==========================================================================
+   YAYIN DURUMU PANOSU
+   confirmed_unavailable = true olan tüm maçları listeler. "Geri Al",
+   channel_mappings satırını confirmed_unavailable=false yapar (silmez) —
+   bir sonraki sync-channels çalışmasında baştan değerlendirilir.
+   ========================================================================== */
+
+el("broadcastRefreshBtn").addEventListener("click", loadBroadcastDashboard);
+
+async function loadBroadcastDashboard() {
+  const body = el("broadcastBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const params = new URLSearchParams();
+    params.set("select", "id,competition_key,home_team,away_team,kickoff_at,status");
+    params.set("confirmed_unavailable", "eq.true");
+    params.set("order", "kickoff_at.asc");
+    params.set("limit", "300");
+    const r = await fetch(api.url + "/rest/v1/fixtures_with_channel?" + params.toString(),
+                          { headers: api.headers() });
+    const rows = await r.json();
+    if (!r.ok) throw new Error(rows.message || "liste okunamadı");
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty"><strong>Liste boş</strong>Şu an "Yayınlanmıyor" olarak işaretli maç yok.</div>';
+      log("yayın durumu panosu — 0 kayıt", "ok");
+      return;
+    }
+
+    body.innerHTML = "";
+    rows.forEach(function (m) {
+      body.appendChild(buildBroadcastRow(m));
+    });
+    log("yayın durumu panosu — " + rows.length + " kayıt", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) + "</div>";
+    log("yayın durumu panosu hatası — " + e.message, "err");
+  }
+}
+
+function buildBroadcastRow(m) {
+  const parts = utcToTurkeyParts(m.kickoff_at);
+  const row = document.createElement("div");
+  row.className = "list-row";
+  row.innerHTML =
+    '<div><div class="main-txt">' + escapeHtml(m.home_team) + " – " + escapeHtml(m.away_team) + "</div>" +
+    '<div class="sub-txt">' + escapeHtml(m.competition_key || "") + " · " +
+    formatTurkeyDateLabel(parts.date) + " " + parts.time + "</div></div>" +
+    '<div class="actions"></div>';
+  const revertBtn = document.createElement("button");
+  revertBtn.className = "tiny"; revertBtn.textContent = "Geri Al";
+  revertBtn.addEventListener("click", function () { revertBroadcastUnavailable(m, row, revertBtn); });
+  row.querySelector(".actions").appendChild(revertBtn);
+  return row;
+}
+
+async function revertBroadcastUnavailable(m, row, btn) {
+  if (!api.token) { log("giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan", "err"); return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch(api.url + "/rest/v1/channel_mappings?fixture_id=eq." + m.id, {
+      method: "PATCH",
+      headers: api.headers({ "Prefer": "return=representation" }),
+      body: JSON.stringify({ confirmed_unavailable: false })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error((j && j.message) || "geri alınamadı");
+    row.remove();
+    log(m.home_team + " – " + m.away_team + " — Yayınlanmıyor işareti kaldırıldı", "ok");
+  } catch (e) {
+    btn.disabled = false;
+    log("geri alınamadı — " + e.message, "err");
+  }
+}
+
+/* ==========================================================================
+   SENKRONİZASYONU ŞİMDİ TETİKLE
+   sync-fixtures / sync-fixtures-sitemap / sync-channels hepsi
+   verify_jwt=false ile deploy edildi (pg_cron da Authorization header'sız
+   çağırıyor) — bu yüzden anon anahtarıyla doğrudan çağrılabilir, admin
+   girişi ZORUNLU DEĞİL.
+   ========================================================================== */
+
+async function callSyncFunction(fnName, statusEl) {
+  const started = Date.now();
+  statusEl.className = "me-status"; statusEl.textContent = fnName + " çalışıyor…";
+  try {
+    const r = await fetch(api.url + "/functions/v1/" + fnName, {
+      method: "POST", headers: api.headers()
+    });
+    const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+    const text = await r.text();
+    if (!r.ok) throw new Error("HTTP " + r.status + " — " + text.slice(0, 200));
+    statusEl.className = "me-status ok";
+    statusEl.textContent = fnName + " tamamlandı ✓ (" + elapsed + "s)";
+    log(fnName + " tamamlandı (" + elapsed + "s) — " + text.slice(0, 300), "ok");
+    return true;
+  } catch (e) {
+    statusEl.className = "me-status err";
+    statusEl.textContent = fnName + " hata: " + e.message;
+    log(fnName + " hata — " + e.message, "err");
+    return false;
+  }
+}
+
+el("syncFixturesBtn").addEventListener("click", function () {
+  callSyncFunction("sync-fixtures", el("syncStatus"));
+});
+el("syncSitemapBtn").addEventListener("click", function () {
+  callSyncFunction("sync-fixtures-sitemap", el("syncStatus"));
+});
+el("syncChannelsBtn").addEventListener("click", function () {
+  callSyncFunction("sync-channels", el("syncStatus"));
+});
+el("syncAllBtn").addEventListener("click", async function () {
+  const statusEl = el("syncStatus");
+  const btns = [el("syncFixturesBtn"), el("syncSitemapBtn"), el("syncChannelsBtn"), el("syncAllBtn")];
+  btns.forEach(function (b) { b.disabled = true; });
+  await callSyncFunction("sync-fixtures", statusEl);
+  await callSyncFunction("sync-fixtures-sitemap", statusEl);
+  await callSyncFunction("sync-channels", statusEl);
+  btns.forEach(function (b) { b.disabled = false; });
+  statusEl.className = "me-status ok"; statusEl.textContent = "tümü tamamlandı ✓";
+});
+
+/* ==========================================================================
+   FUTBOL IQ LİDERLİK TABLOSU MODERASYONU
+   futbol_iq_leaderboard RPC'sini (tüm zamanlar) okur. Silme işlemleri
+   0034_admin_futbol_iq_moderation.sql'deki admin-only politikalara
+   dayanır — anon/başka kullanıcı silemez, sadece bu panelin admin girişi.
+   ========================================================================== */
+
+el("lbRefreshBtn").addEventListener("click", loadLeaderboard);
+
+async function loadLeaderboard() {
+  const body = el("lbBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const r = await fetch(api.url + "/rest/v1/rpc/futbol_iq_leaderboard", {
+      method: "POST",
+      headers: api.headers(),
+      body: JSON.stringify({ period_start: null, limit_count: 200 })
+    });
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "liderlik tablosu okunamadı");
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty"><strong>Liste boş</strong>Henüz hiç XP kaydı yok.</div>';
+      log("liderlik moderasyonu — 0 kayıt", "ok");
+      return;
+    }
+
+    body.innerHTML = "";
+    rows.forEach(function (row) { body.appendChild(buildLeaderboardRow(row)); });
+    log("liderlik moderasyonu — " + rows.length + " kayıt", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
+      "<br>Silme/moderasyon için admin girişi ve 0034 migration'ının uygulanmış olması gerekir.</div>";
+    log("liderlik moderasyonu hatası — " + e.message, "err");
+  }
+}
+
+function buildLeaderboardRow(row) {
+  const el2 = document.createElement("div");
+  el2.className = "list-row";
+  el2.innerHTML =
+    '<div><div class="main-txt"><span class="rank-badge">#' + row.rank + "</span>" +
+    escapeHtml(row.nickname || "(adsız cihaz)") + " — " + row.total_xp + " XP</div>" +
+    '<div class="sub-txt">' + escapeHtml(row.device_id) + "</div></div>" +
+    '<div class="actions"></div>';
+  const actions = el2.querySelector(".actions");
+
+  const delNick = document.createElement("button");
+  delNick.className = "tiny"; delNick.textContent = "Takma Adı Sil";
+  delNick.addEventListener("click", function () {
+    moderateLeaderboardEntry(row, el2, "nickname", delNick);
+  });
+  actions.appendChild(delNick);
+
+  const delXp = document.createElement("button");
+  delXp.className = "danger tiny"; delXp.textContent = "XP Kayıtlarını Sil";
+  delXp.style.marginLeft = "6px";
+  delXp.addEventListener("click", function () {
+    if (!confirm(escapeHtml(row.nickname || row.device_id) + " için TÜM XP kayıtları kalıcı olarak silinecek. Emin misin?")) return;
+    moderateLeaderboardEntry(row, el2, "xp", delXp);
+  });
+  actions.appendChild(delXp);
+
+  return el2;
+}
+
+async function moderateLeaderboardEntry(row, rowEl, kind, btn) {
+  if (!api.token) { log("giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan", "err"); return; }
+  btn.disabled = true;
+  const table = kind === "nickname" ? "futbol_iq_nicknames" : "futbol_iq_xp_events";
+  try {
+    const r = await fetch(api.url + "/rest/v1/" + table + "?device_id=eq." + row.device_id, {
+      method: "DELETE", headers: api.headers()
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(function () { return null; });
+      throw new Error((j && (j.message || j.hint)) || "silinemedi");
+    }
+    log((row.nickname || row.device_id) + " — " + (kind === "nickname" ? "takma ad silindi" : "XP kayıtları silindi"), "ok");
+    if (kind === "xp") { rowEl.remove(); } else { btn.disabled = true; btn.textContent = "silindi"; }
+  } catch (e) {
+    btn.disabled = false;
+    log("silinemedi — " + e.message + " (0034 migration uygulanmamış olabilir)", "err");
   }
 }
 
