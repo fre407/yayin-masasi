@@ -442,6 +442,11 @@
     <button class="tab-btn" id="tabSync" type="button">Senkronizasyon</button>
     <button class="tab-btn" id="tabLeaderboard" type="button">Liderlik Moderasyonu</button>
     <button class="tab-btn" id="tabCorrections" type="button">Bilgi Düzeltmeleri</button>
+    <button class="tab-btn" id="tabNickReports" type="button">Takma Ad Şikayetleri</button>
+    <button class="tab-btn" id="tabSquadSync" type="button">Kadro Senkron Durumu</button>
+    <button class="tab-btn" id="tabPushStats" type="button">Push Bildirim İstatistikleri</button>
+    <button class="tab-btn" id="tabCronHealth" type="button">Cron Sağlık Paneli</button>
+    <button class="tab-btn" id="tabCoverage" type="button">İlk11/İstatistik Kapsama</button>
   </div>
 </header>
 
@@ -621,6 +626,56 @@
     <div class="me-sub" style="margin-bottom:14px">Kullanıcıların maç kartındaki "Bilgiyi Düzelt" düğmesinden gönderdiği saat/kanal düzeltme önerileri. İncelediğin/uyguladığın bir öneriyi "Uygulandı, Sil" ile listeden kaldırabilirsin.</div>
     <button id="corrRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
     <div id="corrBody" class="me-body" style="max-width:760px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewNickReports" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Futbol IQ liderlik tablosundaki takma adlar için gelen uygunsuz içerik şikayetleri — her satır bir takma adı, kaç kez şikayet edildiğini gösterir. Gerekirse Liderlik Moderasyonu sekmesinden o takma adı silebilirsin.</div>
+    <button id="nickRepRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="nickRepBody" class="me-body" style="max-width:760px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewSquadSync" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Kadro tahmin havuzundaki (team_squads) her takımın en son ne zaman senkronize edildiği — 24 saatten eski satırlar bir sonraki sync-team-squads çalışmasında otomatik tazelenir, burada sadece görünürlük için listeleniyor.</div>
+    <button id="squadSyncRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="squadSyncBody" class="me-body" style="max-width:760px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewPushStats" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Push bildirim kaydı yapan cihaz sayısı ve en çok favorilenen takımlar — kaç kullanıcının gerçekten favori/bildirim sistemini kullandığını görmek için.</div>
+    <button id="pushStatsRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="pushStatsBody" class="me-body" style="max-width:760px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewCronHealth" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Tüm otomatik görevlerin (pg_cron) programı ve en son çalışma durumu — bir görev sessizce başarısız olmaya başlarsa buradan fark edebilirsin.</div>
+    <button id="cronHealthRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="cronHealthBody" class="me-body" style="max-width:900px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewCoverage" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Bugünkü (kapsam dahilindeki) maçlardan kaçında resmi İlk 11 / maç istatistiği verisi geldi, kaçı hâlâ eksik — hızlı bir sağlık kontrolü.</div>
+    <button id="coverageRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="coverageBody" class="me-body" style="max-width:760px">
       <div class="empty">Yükleniyor…</div>
     </div>
   </section>
@@ -1179,12 +1234,16 @@ const matchEditor = { results: [], current: null };
 const VIEW_IDS = {
   tables: "viewTables", match: "viewMatchEditor", daily: "viewDaily",
   newmatch: "viewNewMatch", broadcast: "viewBroadcast", sync: "viewSync",
-  leaderboard: "viewLeaderboard", corrections: "viewCorrections"
+  leaderboard: "viewLeaderboard", corrections: "viewCorrections",
+  nickreports: "viewNickReports", squadsync: "viewSquadSync",
+  pushstats: "viewPushStats", cronhealth: "viewCronHealth", coverage: "viewCoverage"
 };
 const TAB_IDS = {
   tables: "tabGeneric", match: "tabMatch", daily: "tabDaily",
   newmatch: "tabNewMatch", broadcast: "tabBroadcast", sync: "tabSync",
-  leaderboard: "tabLeaderboard", corrections: "tabCorrections"
+  leaderboard: "tabLeaderboard", corrections: "tabCorrections",
+  nickreports: "tabNickReports", squadsync: "tabSquadSync",
+  pushstats: "tabPushStats", cronhealth: "tabCronHealth", coverage: "tabCoverage"
 };
 // Sekme ilk kez açıldığında otomatik veri çeken görünümler (lazy-load) —
 // her seferinde en güncel veriyi görsün diye HER tıklamada yeniden çeker,
@@ -1192,7 +1251,8 @@ const TAB_IDS = {
 // Editörü — değişmiş olabilir).
 const VIEW_ON_ENTER = {
   daily: loadDailyMatches, broadcast: loadBroadcastDashboard, leaderboard: loadLeaderboard,
-  corrections: loadCorrections
+  corrections: loadCorrections, nickreports: loadNickReports, squadsync: loadSquadSync,
+  pushstats: loadPushStats, cronhealth: loadCronHealth, coverage: loadCoverage
 };
 
 function switchView(which) {
@@ -1211,6 +1271,11 @@ el("tabBroadcast").addEventListener("click", function () { switchView("broadcast
 el("tabSync").addEventListener("click", function () { switchView("sync"); });
 el("tabLeaderboard").addEventListener("click", function () { switchView("leaderboard"); });
 el("tabCorrections").addEventListener("click", function () { switchView("corrections"); });
+el("tabNickReports").addEventListener("click", function () { switchView("nickreports"); });
+el("tabSquadSync").addEventListener("click", function () { switchView("squadsync"); });
+el("tabPushStats").addEventListener("click", function () { switchView("pushstats"); });
+el("tabCronHealth").addEventListener("click", function () { switchView("cronhealth"); });
+el("tabCoverage").addEventListener("click", function () { switchView("coverage"); });
 
 el("meSearchBtn").addEventListener("click", searchMatches);
 el("meQuery").addEventListener("keydown", function (e) {
@@ -1839,6 +1904,290 @@ async function deleteCorrection(row, rowEl, btn) {
   } catch (e) {
     btn.disabled = false;
     log("silinemedi — " + e.message + " (0049 migration uygulanmamış olabilir)", "err");
+  }
+}
+
+/* ==========================================================================
+   TAKMA AD ŞİKAYETLERİ (futbol_iq_nickname_reports)
+   Okuma-only — silme işlemi zaten Liderlik Moderasyonu sekmesinde var, burada
+   sadece "hangi takma ad kaç kez şikayet edildi" görünürlüğü sağlanıyor.
+   ========================================================================== */
+
+el("nickRepRefreshBtn").addEventListener("click", loadNickReports);
+
+async function loadNickReports() {
+  const body = el("nickRepBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const r = await fetch(
+      api.url + "/rest/v1/futbol_iq_nickname_reports?select=reported_device_id,created_at&order=created_at.desc&limit=500",
+      { headers: api.headers() }
+    );
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "şikayetler okunamadı");
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty"><strong>Liste boş</strong>Henüz hiç şikayet yok.</div>';
+      log("takma ad şikayetleri — 0 kayıt", "ok");
+      return;
+    }
+
+    const counts = new Map();
+    const lastReport = new Map();
+    rows.forEach(function (row) {
+      counts.set(row.reported_device_id, (counts.get(row.reported_device_id) || 0) + 1);
+      if (!lastReport.has(row.reported_device_id)) lastReport.set(row.reported_device_id, row.created_at);
+    });
+    const deviceIds = Array.from(counts.keys());
+
+    const rNick = await fetch(
+      api.url + "/rest/v1/futbol_iq_nicknames?select=device_id,nickname&device_id=in.(" + deviceIds.join(",") + ")",
+      { headers: api.headers() }
+    );
+    const nicks = await rNick.json();
+    const nickByDevice = new Map((Array.isArray(nicks) ? nicks : []).map(function (n) { return [n.device_id, n.nickname]; }));
+
+    body.innerHTML = "";
+    deviceIds
+      .sort(function (a, b) { return counts.get(b) - counts.get(a); })
+      .forEach(function (deviceId) {
+        body.appendChild(buildNickReportRow(deviceId, counts.get(deviceId), nickByDevice.get(deviceId), lastReport.get(deviceId)));
+      });
+    log("takma ad şikayetleri — " + deviceIds.length + " farklı cihaz", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) + "</div>";
+    log("takma ad şikayetleri hatası — " + e.message, "err");
+  }
+}
+
+function buildNickReportRow(deviceId, count, nickname, lastAt) {
+  const el2 = document.createElement("div");
+  el2.className = "list-row";
+  const when = lastAt ? new Date(lastAt).toLocaleString("tr-TR") : "";
+  el2.innerHTML =
+    '<div><div class="main-txt"><span class="rank-badge">' + count + "x</span>" +
+    escapeHtml(nickname || "(takma ad silinmiş)") + "</div>" +
+    '<div class="sub-txt">' + escapeHtml(deviceId) + " — son şikayet: " + escapeHtml(when) + "</div></div>";
+  return el2;
+}
+
+/* ==========================================================================
+   KADRO SENKRON DURUMU (team_squads)
+   ========================================================================== */
+
+el("squadSyncRefreshBtn").addEventListener("click", loadSquadSync);
+
+async function loadSquadSync() {
+  const body = el("squadSyncBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const r = await fetch(
+      api.url + "/rest/v1/team_squads?select=team_name,updated_at&order=updated_at.asc&limit=500",
+      { headers: api.headers() }
+    );
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "kadro verisi okunamadı");
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty"><strong>Liste boş</strong>Henüz senkronize edilmiş kadro yok.</div>';
+      log("kadro senkron durumu — 0 kayıt", "ok");
+      return;
+    }
+
+    body.innerHTML = "";
+    rows.forEach(function (row) { body.appendChild(buildSquadSyncRow(row)); });
+    log("kadro senkron durumu — " + rows.length + " takım", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) + "</div>";
+    log("kadro senkron durumu hatası — " + e.message, "err");
+  }
+}
+
+function buildSquadSyncRow(row) {
+  const el2 = document.createElement("div");
+  el2.className = "list-row";
+  const updated = new Date(row.updated_at);
+  const ageHours = Math.round((Date.now() - updated.getTime()) / 3600000);
+  const stale = ageHours >= 24;
+  el2.innerHTML =
+    '<div><div class="main-txt">' + escapeHtml(row.team_name || "(isimsiz)") + "</div>" +
+    '<div class="sub-txt"' + (stale ? ' style="color:var(--danger)"' : "") + ">" +
+    updated.toLocaleString("tr-TR") + " (" + ageHours + " saat önce)" + (stale ? " — BAYAT" : "") + "</div></div>";
+  return el2;
+}
+
+/* ==========================================================================
+   PUSH BİLDİRİM İSTATİSTİKLERİ (push_tokens)
+   Admin-only SELECT gerektirir (bkz. 0051_admin_panel_extras.sql) — mevcut
+   "Own select" politikası admin'in de sadece kendi satırını görmesine izin
+   veriyordu, bu migration nickname_reports'taki AYNI admin-select desenini
+   push_tokens'a da ekledi.
+   ========================================================================== */
+
+el("pushStatsRefreshBtn").addEventListener("click", loadPushStats);
+
+async function loadPushStats() {
+  const body = el("pushStatsBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  if (!api.token) {
+    body.innerHTML = '<div class="empty"><strong>Admin girişi gerekli</strong>Bu veriyi görmek için üstteki admin e-posta/şifresiyle giriş yapmalısın.</div>';
+    return;
+  }
+  try {
+    const r = await fetch(
+      api.url + "/rest/v1/push_tokens?select=device_id,favorite_teams,favorite_match_fixture_ids",
+      { headers: api.headers() }
+    );
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "push_tokens okunamadı");
+
+    const teamCounts = new Map();
+    let withTeamFav = 0;
+    let withMatchFav = 0;
+    rows.forEach(function (row) {
+      const teams = row.favorite_teams || [];
+      const matches = row.favorite_match_fixture_ids || [];
+      if (teams.length) withTeamFav++;
+      if (matches.length) withMatchFav++;
+      teams.forEach(function (t) { teamCounts.set(t, (teamCounts.get(t) || 0) + 1); });
+    });
+    const topTeams = Array.from(teamCounts.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+
+    body.innerHTML =
+      '<div class="list-row"><div><div class="main-txt">Kayıtlı cihaz</div><div class="sub-txt">' + rows.length + " cihaz push bildirimi için kayıtlı</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">Favori takımı olan</div><div class="sub-txt">' + withTeamFav + " cihaz</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">Favori maçı olan</div><div class="sub-txt">' + withMatchFav + " cihaz</div></div></div>";
+
+    topTeams.forEach(function (entry, i) {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      row.innerHTML =
+        '<div><div class="main-txt"><span class="rank-badge">#' + (i + 1) + "</span>" + escapeHtml(entry[0]) + "</div>" +
+        '<div class="sub-txt">' + entry[1] + " cihaz favoriledi</div></div>";
+      body.appendChild(row);
+    });
+
+    log("push istatistikleri — " + rows.length + " cihaz", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
+      "<br>Admin girişi ve 0051 migration'ının uygulanmış olması gerekir.</div>";
+    log("push istatistikleri hatası — " + e.message, "err");
+  }
+}
+
+/* ==========================================================================
+   CRON SAĞLIK PANELİ (public.admin_cron_status() RPC)
+   pg_cron'un cron.job/cron.job_run_details tabloları `cron` şemasında,
+   PostgREST sadece public/graphql_public şemalarını dışa açıyor — bu yüzden
+   admin_cron_status() SECURITY DEFINER fonksiyonu bir köprü görevi görüyor
+   (fonksiyonun İÇİNDE auth.uid() admin kontrolü var, bkz. 0051 migration).
+   ========================================================================== */
+
+el("cronHealthRefreshBtn").addEventListener("click", loadCronHealth);
+
+async function loadCronHealth() {
+  const body = el("cronHealthBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  if (!api.token) {
+    body.innerHTML = '<div class="empty"><strong>Admin girişi gerekli</strong>Bu veriyi görmek için üstteki admin e-posta/şifresiyle giriş yapmalısın.</div>';
+    return;
+  }
+  try {
+    const r = await fetch(api.url + "/rest/v1/rpc/admin_cron_status", {
+      method: "POST",
+      headers: api.headers(),
+      body: JSON.stringify({}),
+    });
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "cron durumu okunamadı");
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty"><strong>Liste boş</strong>Hiç zamanlanmış görev bulunamadı.</div>';
+      return;
+    }
+
+    body.innerHTML = "";
+    rows.forEach(function (row) { body.appendChild(buildCronRow(row)); });
+    log("cron sağlık paneli — " + rows.length + " görev", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
+      "<br>Admin girişi ve 0051 migration'ının uygulanmış olması gerekir.</div>";
+    log("cron sağlık paneli hatası — " + e.message, "err");
+  }
+}
+
+function buildCronRow(row) {
+  const el2 = document.createElement("div");
+  el2.className = "list-row";
+  const ok = row.last_status === "succeeded";
+  const statusColor = row.last_status == null ? "var(--ink-faint)" : ok ? "var(--ok)" : "var(--danger)";
+  const lastRun = row.last_run_start ? new Date(row.last_run_start).toLocaleString("tr-TR") : "hiç çalışmadı";
+  el2.innerHTML =
+    '<div><div class="main-txt">' + escapeHtml(row.jobname) + (row.active ? "" : " (PASİF)") + "</div>" +
+    '<div class="sub-txt">' + escapeHtml(row.schedule) + " — son çalışma: " + escapeHtml(lastRun) +
+    ' <span style="color:' + statusColor + '">' + escapeHtml(row.last_status || "-") + "</span></div></div>";
+  return el2;
+}
+
+/* ==========================================================================
+   İLK11/İSTATİSTİK KAPSAMA DURUMU (bugünkü fixtures)
+   ========================================================================== */
+
+el("coverageRefreshBtn").addEventListener("click", loadCoverage);
+
+async function loadCoverage() {
+  const body = el("coverageBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
+    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString();
+
+    const rFix = await fetch(
+      api.url + "/rest/v1/fixtures?select=id,home_team,away_team,kickoff_at&kickoff_at=gte." + start +
+        "&kickoff_at=lt." + end + "&id=gt.0",
+      { headers: api.headers() }
+    );
+    const fixtures = await rFix.json();
+    if (!rFix.ok) throw new Error((fixtures && fixtures.message) || "fixtures okunamadı");
+
+    if (!fixtures.length) {
+      body.innerHTML = '<div class="empty"><strong>Bugün maç yok</strong>Bugünkü tarih aralığında fikstür bulunamadı.</div>';
+      return;
+    }
+
+    const idList = fixtures.map(function (f) { return f.id; }).join(",");
+    const [rLineups, rStats] = await Promise.all([
+      fetch(api.url + "/rest/v1/fixture_lineups?select=fixture_id&fixture_id=in.(" + idList + ")", { headers: api.headers() }),
+      fetch(api.url + "/rest/v1/fixture_stats?select=fixture_id&fixture_id=in.(" + idList + ")", { headers: api.headers() }),
+    ]);
+    const lineups = await rLineups.json();
+    const stats = await rStats.json();
+    const lineupIds = new Set((Array.isArray(lineups) ? lineups : []).map(function (l) { return l.fixture_id; }));
+    const statIds = new Set((Array.isArray(stats) ? stats : []).map(function (s) { return s.fixture_id; }));
+
+    const withLineup = fixtures.filter(function (f) { return lineupIds.has(f.id); }).length;
+    const withStats = fixtures.filter(function (f) { return statIds.has(f.id); }).length;
+
+    body.innerHTML =
+      '<div class="list-row"><div><div class="main-txt">Toplam maç</div><div class="sub-txt">' + fixtures.length + "</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">İlk 11 verisi gelen</div><div class="sub-txt">' + withLineup + " / " + fixtures.length + "</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">İstatistik verisi gelen</div><div class="sub-txt">' + withStats + " / " + fixtures.length + "</div></div></div>";
+
+    const missing = fixtures.filter(function (f) { return !lineupIds.has(f.id) && !statIds.has(f.id); });
+    missing.forEach(function (f) {
+      const row = document.createElement("div");
+      row.className = "list-row";
+      row.innerHTML =
+        '<div><div class="main-txt">' + escapeHtml(f.home_team) + " - " + escapeHtml(f.away_team) + "</div>" +
+        '<div class="sub-txt">' + new Date(f.kickoff_at).toLocaleString("tr-TR") + " — henüz İlk11/istatistik yok</div></div>";
+      body.appendChild(row);
+    });
+
+    log("kapsama durumu — " + fixtures.length + " maç, " + missing.length + " eksik", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) + "</div>";
+    log("kapsama durumu hatası — " + e.message, "err");
   }
 }
 
