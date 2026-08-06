@@ -441,6 +441,7 @@
     <button class="tab-btn" id="tabBroadcast" type="button">Yayın Durumu</button>
     <button class="tab-btn" id="tabSync" type="button">Senkronizasyon</button>
     <button class="tab-btn" id="tabLeaderboard" type="button">Liderlik Moderasyonu</button>
+    <button class="tab-btn" id="tabCorrections" type="button">Bilgi Düzeltmeleri</button>
   </div>
 </header>
 
@@ -610,6 +611,16 @@
     <div class="me-sub" style="margin-bottom:14px">Futbol IQ liderlik tablosu (tüm zamanlar). Uygunsuz takma adları veya şüpheli XP kayıtlarını buradan kaldırabilirsin — silme kalıcıdır.</div>
     <button id="lbRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
     <div id="lbBody" class="me-body" style="max-width:760px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewCorrections" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Kullanıcıların maç kartındaki "Bilgiyi Düzelt" düğmesinden gönderdiği saat/kanal düzeltme önerileri. İncelediğin/uyguladığın bir öneriyi "Uygulandı, Sil" ile listeden kaldırabilirsin.</div>
+    <button id="corrRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="corrBody" class="me-body" style="max-width:760px">
       <div class="empty">Yükleniyor…</div>
     </div>
   </section>
@@ -1168,19 +1179,20 @@ const matchEditor = { results: [], current: null };
 const VIEW_IDS = {
   tables: "viewTables", match: "viewMatchEditor", daily: "viewDaily",
   newmatch: "viewNewMatch", broadcast: "viewBroadcast", sync: "viewSync",
-  leaderboard: "viewLeaderboard"
+  leaderboard: "viewLeaderboard", corrections: "viewCorrections"
 };
 const TAB_IDS = {
   tables: "tabGeneric", match: "tabMatch", daily: "tabDaily",
   newmatch: "tabNewMatch", broadcast: "tabBroadcast", sync: "tabSync",
-  leaderboard: "tabLeaderboard"
+  leaderboard: "tabLeaderboard", corrections: "tabCorrections"
 };
 // Sekme ilk kez açıldığında otomatik veri çeken görünümler (lazy-load) —
 // her seferinde en güncel veriyi görsün diye HER tıklamada yeniden çeker,
 // state tutup "zaten yüklendi" diye atlamaz (veri başka sekmeden — ör. Maç
 // Editörü — değişmiş olabilir).
 const VIEW_ON_ENTER = {
-  daily: loadDailyMatches, broadcast: loadBroadcastDashboard, leaderboard: loadLeaderboard
+  daily: loadDailyMatches, broadcast: loadBroadcastDashboard, leaderboard: loadLeaderboard,
+  corrections: loadCorrections
 };
 
 function switchView(which) {
@@ -1198,6 +1210,7 @@ el("tabNewMatch").addEventListener("click", function () { switchView("newmatch")
 el("tabBroadcast").addEventListener("click", function () { switchView("broadcast"); });
 el("tabSync").addEventListener("click", function () { switchView("sync"); });
 el("tabLeaderboard").addEventListener("click", function () { switchView("leaderboard"); });
+el("tabCorrections").addEventListener("click", function () { switchView("corrections"); });
 
 el("meSearchBtn").addEventListener("click", searchMatches);
 el("meQuery").addEventListener("keydown", function (e) {
@@ -1746,6 +1759,86 @@ async function moderateLeaderboardEntry(row, rowEl, kind, btn) {
   } catch (e) {
     btn.disabled = false;
     log("silinemedi — " + e.message + " (0034 migration uygulanmamış olabilir)", "err");
+  }
+}
+
+/* ==========================================================================
+   BİLGİ DÜZELTMELERİ (maç kartındaki "Bilgiyi Düzelt" formu)
+   match_info_corrections tablosunu okur — okuma/silme SADECE admin girişiyle
+   çalışır (0049_match_info_corrections.sql'deki admin-only politikalar,
+   liderlik moderasyonuyla aynı desen). Otomatik hiçbir aksiyon almaz, sadece
+   listeler; "Uygulandı, Sil" tıklanınca satır kalıcı olarak silinir.
+   ========================================================================== */
+
+el("corrRefreshBtn").addEventListener("click", loadCorrections);
+
+const FIELD_LABELS = { time: "Saat", channel: "Kanal" };
+
+async function loadCorrections() {
+  const body = el("corrBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const r = await fetch(
+      api.url + "/rest/v1/match_info_corrections?select=*&order=created_at.desc&limit=200",
+      { headers: api.headers() }
+    );
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "düzeltmeler okunamadı");
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty"><strong>Liste boş</strong>Henüz bekleyen bir düzeltme önerisi yok.</div>';
+      log("bilgi düzeltmeleri — 0 kayıt", "ok");
+      return;
+    }
+
+    body.innerHTML = "";
+    rows.forEach(function (row) { body.appendChild(buildCorrectionRow(row)); });
+    log("bilgi düzeltmeleri — " + rows.length + " kayıt", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
+      "<br>Görmek için admin girişi ve 0049 migration'ının uygulanmış olması gerekir.</div>";
+    log("bilgi düzeltmeleri hatası — " + e.message, "err");
+  }
+}
+
+function buildCorrectionRow(row) {
+  const el2 = document.createElement("div");
+  el2.className = "list-row";
+  const when = new Date(row.created_at).toLocaleString("tr-TR");
+  el2.innerHTML =
+    '<div><div class="main-txt"><span class="rank-badge">' + (FIELD_LABELS[row.field] || row.field) + "</span>" +
+    escapeHtml(row.suggested_value) + "</div>" +
+    '<div class="sub-txt">' + escapeHtml(row.match_label) + " — " + escapeHtml(when) +
+    (row.fixture_id != null ? " — fixture #" + row.fixture_id : "") + "</div></div>" +
+    '<div class="actions"></div>';
+  const actions = el2.querySelector(".actions");
+
+  const delBtn = document.createElement("button");
+  delBtn.className = "tiny"; delBtn.textContent = "Uygulandı, Sil";
+  delBtn.addEventListener("click", function () {
+    deleteCorrection(row, el2, delBtn);
+  });
+  actions.appendChild(delBtn);
+
+  return el2;
+}
+
+async function deleteCorrection(row, rowEl, btn) {
+  if (!api.token) { log("giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan", "err"); return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch(api.url + "/rest/v1/match_info_corrections?id=eq." + row.id, {
+      method: "DELETE", headers: api.headers()
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(function () { return null; });
+      throw new Error((j && (j.message || j.hint)) || "silinemedi");
+    }
+    log(row.match_label + " (" + (FIELD_LABELS[row.field] || row.field) + ") — düzeltme silindi", "ok");
+    rowEl.remove();
+  } catch (e) {
+    btn.disabled = false;
+    log("silinemedi — " + e.message + " (0049 migration uygulanmamış olabilir)", "err");
   }
 }
 
