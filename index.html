@@ -1352,11 +1352,42 @@ function openMatchForm(m) {
       "</div>" +
       '<div class="me-actions">' +
         '<button class="primary" id="meSaveBtn">Kaydet</button>' +
+        '<button class="danger" id="meDeleteBtn">Maçı Sil</button>' +
         '<span class="me-status" id="meStatus"></span>' +
       "</div>" +
     "</div>";
   el("meBackBtn").addEventListener("click", renderMatchResults);
   el("meSaveBtn").addEventListener("click", saveMatchForm);
+  el("meDeleteBtn").addEventListener("click", deleteMatchForm);
+}
+
+async function deleteMatchForm() {
+  const m = matchEditor.current;
+  const status = el("meStatus");
+  if (!confirm("Bu maç kalıcı olarak silinecek:\n" + m.home_team + " – " + m.away_team +
+      "\n\nGeri alınamaz.")) return;
+  if (!api.token) {
+    status.className = "me-status err";
+    status.textContent = "giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan";
+    return;
+  }
+  status.className = "me-status"; status.textContent = "siliniyor…";
+  try {
+    // channel_mappings.fixture_id "on delete cascade" olduğu için tek DELETE
+    // yeterli — kanal kaydı da otomatik silinir.
+    const r = await fetch(api.url + "/rest/v1/fixtures?id=eq." + m.id,
+                          { method: "DELETE", headers: api.headers() });
+    if (!r.ok) {
+      const j = await r.json().catch(function () { return null; });
+      throw new Error((j && j.message) || "silme reddedildi");
+    }
+    log(m.home_team + " – " + m.away_team + " silindi (fixture id " + m.id + ")", "ok");
+    matchEditor.results = matchEditor.results.filter(function (r) { return r.id !== m.id; });
+    renderMatchResults();
+  } catch (e) {
+    status.className = "me-status err"; status.textContent = "hata: " + e.message;
+    log("maç silinemedi — " + e.message, "err");
+  }
 }
 
 async function saveMatchForm() {
@@ -1537,6 +1568,31 @@ function buildDailyRow(m) {
     openMatchForm(m);
   });
   row.lastElementChild.appendChild(editBtn);
+
+  const delBtn = document.createElement("button");
+  delBtn.className = "tiny danger"; delBtn.textContent = "Sil";
+  delBtn.style.marginLeft = "6px";
+  delBtn.addEventListener("click", async function () {
+    if (!confirm("Bu maç kalıcı olarak silinecek:\n" + m.home_team + " – " + m.away_team +
+        "\n\nGeri alınamaz.")) return;
+    if (!api.token) {
+      log("silmek için üstteki yönetici e-posta/şifre ile giriş yapmalısın", "err");
+      return;
+    }
+    try {
+      const r = await fetch(api.url + "/rest/v1/fixtures?id=eq." + m.id,
+                            { method: "DELETE", headers: api.headers() });
+      if (!r.ok) {
+        const j = await r.json().catch(function () { return null; });
+        throw new Error((j && j.message) || "silme reddedildi");
+      }
+      log(m.home_team + " – " + m.away_team + " silindi (fixture id " + m.id + ")", "ok");
+      loadDailyMatches();
+    } catch (e) {
+      log("silinemedi — " + e.message, "err");
+    }
+  });
+  row.lastElementChild.appendChild(delBtn);
   return row;
 }
 
