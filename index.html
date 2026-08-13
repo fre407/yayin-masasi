@@ -548,17 +548,19 @@
         <input id="nmAway" placeholder="ör. Fenerbahçe"></div>
       </div>
       <div class="me-row">
-        <div class="fld"><label for="nmComp">Lig / turnuva anahtarı</label>
-        <input id="nmComp" list="nmCompList" placeholder="ör. hazirlik_maci">
+        <div class="fld"><label for="nmComp">Lig / turnuva anahtarı (kategori)</label>
+        <input id="nmComp" list="nmCompList" placeholder="ör. hazirlik_maci — listede yoksa yeni bir anahtar yazabilirsin">
         <datalist id="nmCompList">
           <option value="super_lig"><option value="tff_1_lig"><option value="turkiye_kupasi">
           <option value="premier_lig"><option value="championship"><option value="league_one"><option value="fa_cup">
           <option value="la_liga"><option value="serie_a"><option value="bundesliga"><option value="ligue_1">
           <option value="eredivisie"><option value="primeira_liga">
-          <option value="sampiyonlar_ligi"><option value="avrupa_ligi"><option value="konferans_ligi">
+          <option value="sampiyonlar_ligi"><option value="avrupa_ligi"><option value="konferans_ligi"><option value="uefa_super_kupa">
           <option value="dunya_kupasi"><option value="euro"><option value="uluslar_ligi">
           <option value="hazirlik_maci">
-        </datalist></div>
+        </datalist>
+        <div class="me-sub" style="margin-top:4px">Bağlanınca bu liste veritabanındaki GÜNCEL kategorilerle otomatik doldurulur. Listede olmayan bir kategori (yeni bir turnuva) eklemek istersen sadece kutuya istediğin anahtarı yaz — otomatik olarak yeni bir kategori açılmış olur.</div>
+        </div>
       </div>
       <div class="me-row">
         <div class="fld"><label for="nmDate">Tarih</label>
@@ -887,6 +889,8 @@ el("btnConnect").addEventListener("click", async function () {
   el("tabs").style.display = "flex";
   el("onair").className = "onair live";
   el("brandSub").textContent = api.token ? "yetkili" : "anonim";
+
+  loadCompetitionKeyOptions();
 
   try {
     state.tables = await api.introspect();
@@ -1606,6 +1610,36 @@ function buildDailyRow(m) {
 
 function manualFixtureId() {
   return -(9000000000000 + Date.now());
+}
+
+// "Lig / turnuva anahtarı" datalist'ini fixtures tablosundaki GERÇEK ve
+// GÜNCEL competition_key değerleriyle doldurur — önceden statik/elle
+// yazılmış bir liste vardı, uygulamaya yeni bir lig/turnuva eklendiğinde
+// (ör. 2026-08-13'te eklenen uefa_super_kupa) burası elle güncellenmediği
+// sürece eski kalıyordu. Bağlantı kurulunca (btnConnect) otomatik çağrılır.
+// Sorgu başarısız olursa HTML'deki statik yedek liste olduğu gibi kalır —
+// hiçbir zaman kategori seçimini tamamen kilitlemez.
+async function loadCompetitionKeyOptions() {
+  try {
+    const params = new URLSearchParams();
+    params.set("select", "competition_key");
+    params.set("limit", "5000");
+    const r = await fetch(api.url + "/rest/v1/fixtures?" + params.toString(), { headers: api.headers() });
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "kategori listesi okunamadı");
+    const keys = Array.from(new Set(rows.map(function (row) { return row.competition_key; }).filter(Boolean))).sort();
+    if (keys.length === 0) return; // bos donduyse statik yedek listeyi koru
+    const dl = el("nmCompList");
+    dl.innerHTML = "";
+    keys.forEach(function (k) {
+      const o = document.createElement("option");
+      o.value = k;
+      dl.appendChild(o);
+    });
+    log(keys.length + " kategori (lig/turnuva) veritabanindan yuklendi", "ok");
+  } catch (e) {
+    log("kategori listesi guncellenemedi, statik yedek liste kullaniliyor — " + e.message, "err");
+  }
 }
 
 el("nmSaveBtn").addEventListener("click", saveNewMatch);
