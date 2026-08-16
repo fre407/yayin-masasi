@@ -343,6 +343,20 @@
   .me-status.ok { color: var(--ok); }
   .me-status.err { color: var(--danger); }
 
+  /* ---------- İlk 11 Manuel Giriş ---------- */
+
+  .le-teams-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 720px) { .le-teams-grid { grid-template-columns: 1fr; } }
+  .le-team-col { display: flex; flex-direction: column; gap: 7px; }
+  .le-team-title {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-faint); margin-bottom: 4px;
+  }
+  select.le-slot { margin-bottom: 0; }
+
   /* ---------- Günlük Maçlar ---------- */
 
   .daily-toolbar {
@@ -436,6 +450,7 @@
   <div class="tabs" id="tabs" style="display:none">
     <button class="tab-btn active" id="tabGeneric" type="button">Genel Tablo Editörü</button>
     <button class="tab-btn" id="tabMatch" type="button">Maç Editörü</button>
+    <button class="tab-btn" id="tabLineupEntry" type="button">İlk 11 Manuel Giriş</button>
     <button class="tab-btn" id="tabDaily" type="button">Günlük Maçlar</button>
     <button class="tab-btn" id="tabNewMatch" type="button">Yeni Maç Ekle</button>
     <button class="tab-btn" id="tabBroadcast" type="button">Yayın Durumu</button>
@@ -520,6 +535,24 @@
       <div class="empty">
         <strong>Bir maç ara</strong>
         Yukarıdan bir takım adı yaz ve <code>Ara</code>'ya bas.
+      </div>
+    </div>
+  </section>
+</main>
+
+<main id="viewLineupEntry" style="display:none">
+  <section class="work me-work">
+    <div class="me-search-bar">
+      <div class="me-search-fld">
+        <label for="leQuery">Takım adıyla ara</label>
+        <input id="leQuery" placeholder="ör. Beşiktaş" spellcheck="false">
+      </div>
+      <button id="leSearchBtn">Ara</button>
+    </div>
+    <div id="leBody" class="me-body">
+      <div class="empty">
+        <strong>Bir maç ara</strong>
+        Yukarıdan bir takım adı yaz ve <code>Ara</code>'ya bas. Kadrolar <code>team_squads</code>'dan (en güncel senkron) otomatik yüklenir.
       </div>
     </div>
   </section>
@@ -1236,14 +1269,14 @@ function formatTurkeyDateLabel(dateStr) {
 const matchEditor = { results: [], current: null };
 
 const VIEW_IDS = {
-  tables: "viewTables", match: "viewMatchEditor", daily: "viewDaily",
+  tables: "viewTables", match: "viewMatchEditor", lineupentry: "viewLineupEntry", daily: "viewDaily",
   newmatch: "viewNewMatch", broadcast: "viewBroadcast", sync: "viewSync",
   leaderboard: "viewLeaderboard", corrections: "viewCorrections",
   nickreports: "viewNickReports", squadsync: "viewSquadSync",
   pushstats: "viewPushStats", cronhealth: "viewCronHealth", coverage: "viewCoverage"
 };
 const TAB_IDS = {
-  tables: "tabGeneric", match: "tabMatch", daily: "tabDaily",
+  tables: "tabGeneric", match: "tabMatch", lineupentry: "tabLineupEntry", daily: "tabDaily",
   newmatch: "tabNewMatch", broadcast: "tabBroadcast", sync: "tabSync",
   leaderboard: "tabLeaderboard", corrections: "tabCorrections",
   nickreports: "tabNickReports", squadsync: "tabSquadSync",
@@ -1269,6 +1302,7 @@ function switchView(which) {
 
 el("tabGeneric").addEventListener("click", function () { switchView("tables"); });
 el("tabMatch").addEventListener("click", function () { switchView("match"); });
+el("tabLineupEntry").addEventListener("click", function () { switchView("lineupentry"); });
 el("tabDaily").addEventListener("click", function () { switchView("daily"); });
 el("tabNewMatch").addEventListener("click", function () { switchView("newmatch"); });
 el("tabBroadcast").addEventListener("click", function () { switchView("broadcast"); });
@@ -1444,6 +1478,250 @@ async function saveMatchForm() {
   } catch (e) {
     status.className = "me-status err"; status.textContent = "hata: " + e.message;
     log("maç kaydedilemedi — " + e.message, "err");
+  }
+}
+
+/* ==========================================================================
+   İLK 11 MANUEL GİRİŞ (kullanıcı isteği, 2026-08-16)
+   Otomatik yakalama (Sporx/aspor.com.tr) kaçırdığında ya da yanlış geldiğinde
+   admin buradan elle girebilir/düzeltebilir. fixture_lineups'a AYNI şekilde
+   (mevcut sync-lineups/sync-lineups-sporx'in yazdığı satır formatıyla)
+   upsert eder — app tarafında hiçbir özel kod gerekmez, tıpkı Sporx kaynaklı
+   satırlar gibi görünmeden karışır. Her pozisyon slotu, o takımın
+   team_squads'daki (en güncel senkron) kadrosundan pozisyona göre
+   gruplanmış (optgroup) bir <select> — "pozisyon pozisyon ulaşabileceğim
+   menü" isteğini karşılıyor.
+   ========================================================================== */
+
+const lineupEntry = { current: null, homeSquad: [], awaySquad: [] };
+
+const POSITION_LABELS_TR = {
+  Goalkeeper: "Kaleci", Defender: "Defans", Midfielder: "Orta Saha", Attacker: "Forvet"
+};
+const POSITION_ORDER = ["Goalkeeper", "Defender", "Midfielder", "Attacker"];
+
+el("leSearchBtn").addEventListener("click", searchLineupMatches);
+el("leQuery").addEventListener("keydown", function (e) {
+  if (e.key === "Enter") searchLineupMatches();
+});
+
+async function searchLineupMatches() {
+  const q = el("leQuery").value.trim();
+  if (!q) { log("bir takım adı yaz", "err"); return; }
+  const body = el("leBody");
+  body.innerHTML = '<div class="empty">Aranıyor…</div>';
+  try {
+    const params = new URLSearchParams();
+    params.set("select", "id,competition_key,home_team,away_team,kickoff_at,status");
+    params.set("or", "(home_team.ilike.*" + q + "*,away_team.ilike.*" + q + "*)");
+    params.set("order", "kickoff_at.desc");
+    params.set("limit", "25");
+    const r = await fetch(api.url + "/rest/v1/fixtures?" + params.toString(), { headers: api.headers() });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.message || "arama başarısız");
+    lineupEntry.results = j;
+    renderLineupMatchResults();
+    log(q + " için " + j.length + " maç bulundu (İlk 11 Manuel Giriş)", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Arama başarısız</strong>' + escapeHtml(e.message) + "</div>";
+    log("İlk 11 giriş araması hatası — " + e.message, "err");
+  }
+}
+
+function renderLineupMatchResults() {
+  const body = el("leBody");
+  if (!lineupEntry.results.length) {
+    body.innerHTML = '<div class="empty"><strong>Sonuç yok</strong>Başka bir takım adı dene.</div>';
+    return;
+  }
+  body.innerHTML = "";
+  lineupEntry.results.forEach(function (m) {
+    const parts = utcToTurkeyParts(m.kickoff_at);
+    const d = document.createElement("div");
+    d.className = "me-result";
+    d.innerHTML =
+      '<div><div class="teams">' + escapeHtml(m.home_team) + " – " + escapeHtml(m.away_team) + "</div></div>" +
+      '<div class="when">' + formatTurkeyDateLabel(parts.date) + " · " + parts.time + "</div>";
+    d.addEventListener("click", function () { openLineupForm(m); });
+    body.appendChild(d);
+  });
+}
+
+async function openLineupForm(m) {
+  lineupEntry.current = m;
+  const body = el("leBody");
+  body.innerHTML = '<div class="empty">Kadrolar yükleniyor…</div>';
+
+  try {
+    const [squadRes, existingRes] = await Promise.all([
+      fetch(api.url + "/rest/v1/team_squads?select=team_name,players&team_name=in.(" +
+            encodeURIComponent(m.home_team) + "," + encodeURIComponent(m.away_team) + ")",
+            { headers: api.headers() }),
+      fetch(api.url + "/rest/v1/fixture_lineups?fixture_id=eq." + m.id, { headers: api.headers() })
+    ]);
+    const squadRows = await squadRes.json();
+    if (!squadRes.ok) throw new Error(squadRows.message || "kadro okunamadı");
+    const existingRows = await existingRes.json();
+    if (!existingRes.ok) throw new Error(existingRows.message || "mevcut kadro okunamadı");
+
+    lineupEntry.homeSquad = (squadRows.find(function (s) { return s.team_name === m.home_team; }) || {}).players || [];
+    lineupEntry.awaySquad = (squadRows.find(function (s) { return s.team_name === m.away_team; }) || {}).players || [];
+    const existing = existingRows[0] || null;
+
+    if (!lineupEntry.homeSquad.length && !lineupEntry.awaySquad.length) {
+      body.innerHTML = '<div class="empty"><strong>Kadro bulunamadı</strong>' +
+        escapeHtml(m.home_team) + ' / ' + escapeHtml(m.away_team) + ' için team_squads\'da veri yok — ' +
+        'Kadro Senkron Durumu sekmesinden kontrol et.</div>';
+      return;
+    }
+
+    renderLineupForm(m, existing);
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Yüklenemedi</strong>' + escapeHtml(e.message) + "</div>";
+    log("İlk 11 formu yüklenemedi — " + e.message, "err");
+  }
+}
+
+function positionOptionsHtml(squad, selectedName) {
+  let html = '<option value="">— seç —</option>';
+  POSITION_ORDER.forEach(function (posKey) {
+    const players = squad.filter(function (p) { return p.position === posKey; });
+    if (!players.length) return;
+    html += '<optgroup label="' + escapeHtml(POSITION_LABELS_TR[posKey] || posKey) + '">';
+    players.forEach(function (p) {
+      const sel = p.name === selectedName ? " selected" : "";
+      html += '<option value="' + escapeHtml(p.name) + '"' + sel + '>' +
+        escapeHtml(p.name) + (p.number != null ? " (#" + p.number + ")" : "") + "</option>";
+    });
+    html += "</optgroup>";
+  });
+  // Kadroda pozisyon bilgisi olmayan oyuncular (nadiren) — grupsuz ekle.
+  const noPos = squad.filter(function (p) { return !POSITION_ORDER.includes(p.position); });
+  if (noPos.length) {
+    html += '<optgroup label="Diğer">';
+    noPos.forEach(function (p) {
+      const sel = p.name === selectedName ? " selected" : "";
+      html += '<option value="' + escapeHtml(p.name) + '"' + sel + '>' + escapeHtml(p.name) + "</option>";
+    });
+    html += "</optgroup>";
+  }
+  return html;
+}
+
+function teamSlotSelectsHtml(prefix, squad, existingXi) {
+  const existingNames = (existingXi || []).map(function (p) { return p.name; });
+  let html = "";
+  for (let i = 0; i < 11; i++) {
+    const selected = existingNames[i] || "";
+    html += '<select class="le-slot" id="' + prefix + i + '">' + positionOptionsHtml(squad, selected) + "</select>";
+  }
+  return html;
+}
+
+function renderLineupForm(m, existing) {
+  const body = el("leBody");
+  body.innerHTML =
+    '<div class="me-back"><button id="leBackBtn">‹ Sonuçlara dön</button></div>' +
+    '<div class="me-card">' +
+      '<div class="me-teams">' + escapeHtml(m.home_team) + " – " + escapeHtml(m.away_team) + "</div>" +
+      '<div class="me-sub">fixture id ' + m.id + " · " + escapeHtml(m.competition_key || "") +
+        (existing ? " · <strong>mevcut kadro var, düzenliyorsun</strong>" : " · henüz kadro yok") + "</div>" +
+      '<div class="le-teams-grid">' +
+        '<div class="le-team-col">' +
+          '<div class="le-team-title">' + escapeHtml(m.home_team) + " (Ev sahibi) — 11'i doldur</div>" +
+          teamSlotSelectsHtml("leHome", lineupEntry.homeSquad, existing ? existing.home_start_xi : null) +
+        "</div>" +
+        '<div class="le-team-col">' +
+          '<div class="le-team-title">' + escapeHtml(m.away_team) + " (Deplasman) — 11'i doldur</div>" +
+          teamSlotSelectsHtml("leAway", lineupEntry.awaySquad, existing ? existing.away_start_xi : null) +
+        "</div>" +
+      "</div>" +
+      '<div class="me-actions">' +
+        '<button class="primary" id="leSaveBtn">İlk 11\'i Kaydet</button>' +
+        '<span class="me-status" id="leStatus"></span>' +
+      "</div>" +
+    "</div>";
+  el("leBackBtn").addEventListener("click", renderLineupMatchResults);
+  el("leSaveBtn").addEventListener("click", saveLineupForm);
+}
+
+function readSlotNames(prefix) {
+  const names = [];
+  for (let i = 0; i < 11; i++) {
+    const v = el(prefix + i).value;
+    if (v) names.push(v);
+  }
+  return names;
+}
+
+function findDuplicates(names) {
+  const seen = new Set();
+  const dupes = new Set();
+  names.forEach(function (n) { if (seen.has(n)) dupes.add(n); else seen.add(n); });
+  return Array.from(dupes);
+}
+
+async function saveLineupForm() {
+  const m = lineupEntry.current;
+  const status = el("leStatus");
+
+  if (!api.token) {
+    status.className = "me-status err";
+    status.textContent = "giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan";
+    return;
+  }
+
+  const homeNames = readSlotNames("leHome");
+  const awayNames = readSlotNames("leAway");
+
+  if (homeNames.length !== 11 || awayNames.length !== 11) {
+    status.className = "me-status err";
+    status.textContent = "her iki takım için de tam 11 oyuncu seçmelisin (ev: " + homeNames.length + "/11, deplasman: " + awayNames.length + "/11)";
+    return;
+  }
+  const homeDupes = findDuplicates(homeNames);
+  const awayDupes = findDuplicates(awayNames);
+  if (homeDupes.length || awayDupes.length) {
+    status.className = "me-status err";
+    status.textContent = "aynı oyuncu birden fazla slotta seçilmiş: " + homeDupes.concat(awayDupes).join(", ");
+    return;
+  }
+
+  status.className = "me-status"; status.textContent = "kaydediliyor…";
+
+  function toXi(names, squad) {
+    return names.map(function (name) {
+      const p = squad.find(function (x) { return x.name === name; });
+      return { name: name, number: (p && p.number != null) ? p.number : null, pos: (p && p.position) || null };
+    });
+  }
+
+  const row = {
+    fixture_id: m.id,
+    home_formation: null,
+    away_formation: null,
+    home_coach: null,
+    away_coach: null,
+    home_start_xi: toXi(homeNames, lineupEntry.homeSquad),
+    away_start_xi: toXi(awayNames, lineupEntry.awaySquad),
+    home_substitutes: [],
+    away_substitutes: [],
+    updated_at: new Date().toISOString()
+  };
+
+  try {
+    const r = await fetch(api.url + "/rest/v1/fixture_lineups?on_conflict=fixture_id", {
+      method: "POST",
+      headers: api.headers({ "Prefer": "resolution=merge-duplicates,return=representation" }),
+      body: JSON.stringify(row)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error((j && j.message) || "kaydedilemedi");
+    status.className = "me-status ok"; status.textContent = "kaydedildi ✓ — kadro uygulamada anında görünür";
+    log(m.home_team + " – " + m.away_team + " İlk 11'i manuel olarak kaydedildi (fixture id " + m.id + ")", "ok");
+  } catch (e) {
+    status.className = "me-status err"; status.textContent = "hata: " + e.message;
+    log("İlk 11 kaydedilemedi — " + e.message, "err");
   }
 }
 
