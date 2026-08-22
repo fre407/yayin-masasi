@@ -2,7 +2,14 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14181f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Yayın Masası">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <title>Yayın Masası — Veri Yönetimi</title>
 
 <!--
@@ -421,6 +428,8 @@
     <span class="onair" id="onair"></span>
     <h1>Yayın Masası</h1>
     <span class="sub" id="brandSub">bağlantı bekleniyor</span>
+    <span class="sub" id="quotaBox" title="API-Football günlük kota kullanımı"></span>
+    <button class="tiny" id="btnForget" type="button" style="display:none;margin-left:8px">Oturumu unut</button>
   </div>
 
   <div class="conn">
@@ -462,6 +471,7 @@
     <button class="tab-btn" id="tabPushStats" type="button">Push Bildirim İstatistikleri</button>
     <button class="tab-btn" id="tabCronHealth" type="button">Cron Sağlık Paneli</button>
     <button class="tab-btn" id="tabCoverage" type="button">İlk11/İstatistik Kapsama</button>
+    <button class="tab-btn" id="tabLive" type="button">Canlı Maç İzleme</button>
   </div>
 </header>
 
@@ -716,6 +726,16 @@
   </section>
 </main>
 
+<main id="viewLive" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Şu anda canlı olan maçlar: skor geliyor mu, ilk 11 var mı, gol/kart olayı işlendi mi, bildirimler gönderildi mi — hepsi tek bakışta.</div>
+    <button id="liveRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="liveBody" class="me-body" style="max-width:900px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
 <footer id="log"></footer>
 
 <div class="sheet" id="sheet">
@@ -759,6 +779,26 @@ const api = {
     const j = await r.json();
     if (!r.ok) throw new Error(j.error_description || j.msg || j.error || "giriş başarısız");
     this.token = j.access_token;
+    this.refreshToken = j.refresh_token || null;
+    return j;
+  },
+
+  /**
+   * Kaydedilmiş refresh token ile oturumu yeniler — telefondan her açılışta
+   * şifre yazmamak için (kullanıcı isteği, 2026-08-22). ŞİFRE HİÇBİR ZAMAN
+   * saklanmıyor; sadece Supabase'in kendi refresh token'ı saklanıyor — bu,
+   * supabase-js'in "persistSession" davranışının birebir aynısı.
+   */
+  async refreshSession(refreshToken) {
+    const r = await fetch(this.url + "/auth/v1/token?grant_type=refresh_token", {
+      method: "POST",
+      headers: { "apikey": this.anonKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error_description || j.msg || j.error || "oturum yenilenemedi");
+    this.token = j.access_token;
+    this.refreshToken = j.refresh_token || refreshToken;
     return j;
   },
 
@@ -935,6 +975,13 @@ el("btnConnect").addEventListener("click", async function () {
     log("genel tablo listesi okunamadı — " + e.message +
         " (Maç Editörü bundan etkilenmez, doğrudan sorgu kullanıyor)", "err");
   }
+
+  // Oturum bilgisi ve kota göstergesi (kullanıcı isteği, 2026-08-22).
+  saveSession();
+  loadApiQuota();
+  // Kota günde 7.500 istekle sınırlı ve dolduğunda tüm veri akışı durur —
+  // panel açık kaldığı sürece 5 dakikada bir tazeleniyor.
+  if (!window.__quotaTimer) window.__quotaTimer = setInterval(loadApiQuota, 5 * 60 * 1000);
 });
 
 function renderTableList() {
@@ -1273,14 +1320,14 @@ const VIEW_IDS = {
   newmatch: "viewNewMatch", broadcast: "viewBroadcast", sync: "viewSync",
   leaderboard: "viewLeaderboard", corrections: "viewCorrections",
   nickreports: "viewNickReports", squadsync: "viewSquadSync",
-  pushstats: "viewPushStats", cronhealth: "viewCronHealth", coverage: "viewCoverage"
+  pushstats: "viewPushStats", cronhealth: "viewCronHealth", coverage: "viewCoverage", live: "viewLive"
 };
 const TAB_IDS = {
   tables: "tabGeneric", match: "tabMatch", lineupentry: "tabLineupEntry", daily: "tabDaily",
   newmatch: "tabNewMatch", broadcast: "tabBroadcast", sync: "tabSync",
   leaderboard: "tabLeaderboard", corrections: "tabCorrections",
   nickreports: "tabNickReports", squadsync: "tabSquadSync",
-  pushstats: "tabPushStats", cronhealth: "tabCronHealth", coverage: "tabCoverage"
+  pushstats: "tabPushStats", cronhealth: "tabCronHealth", coverage: "tabCoverage", live: "tabLive"
 };
 // Sekme ilk kez açıldığında otomatik veri çeken görünümler (lazy-load) —
 // her seferinde en güncel veriyi görsün diye HER tıklamada yeniden çeker,
@@ -1289,7 +1336,7 @@ const TAB_IDS = {
 const VIEW_ON_ENTER = {
   daily: loadDailyMatches, broadcast: loadBroadcastDashboard, leaderboard: loadLeaderboard,
   corrections: loadCorrections, nickreports: loadNickReports, squadsync: loadSquadSync,
-  pushstats: loadPushStats, cronhealth: loadCronHealth, coverage: loadCoverage
+  pushstats: loadPushStats, cronhealth: loadCronHealth, coverage: loadCoverage, live: loadLiveMatches
 };
 
 function switchView(which) {
@@ -1314,6 +1361,7 @@ el("tabSquadSync").addEventListener("click", function () { switchView("squadsync
 el("tabPushStats").addEventListener("click", function () { switchView("pushstats"); });
 el("tabCronHealth").addEventListener("click", function () { switchView("cronhealth"); });
 el("tabCoverage").addEventListener("click", function () { switchView("coverage"); });
+el("tabLive").addEventListener("click", function () { switchView("live"); });
 
 el("meSearchBtn").addEventListener("click", searchMatches);
 el("meQuery").addEventListener("keydown", function (e) {
@@ -2503,6 +2551,148 @@ function buildCronRow(row) {
 
 el("coverageRefreshBtn").addEventListener("click", loadCoverage);
 
+/* ============================================================================
+   OTURUM HATIRLAMA / API KOTASI / CANLI MAÇ İZLEME
+   (kullanıcı isteği, 2026-08-22 — "telefondan hızlıca çözüm üretmek" için)
+   ============================================================================ */
+
+// --- Oturum hatırlama -------------------------------------------------------
+// Telefondan her açılışta proje URL'i, anon anahtar ve e-postayı tekrar
+// yazmamak için tarayıcıda saklanıyor. ŞİFRE ASLA SAKLANMIYOR — onun yerine
+// Supabase'in kendi refresh token'ı tutuluyor (supabase-js'in persistSession
+// davranışının aynısı). "Oturumu unut" ile tamamen temizlenir.
+const SESSION_KEY = "yayinMasasi.session";
+
+function saveSession() {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      url: api.url,
+      anonKey: api.anonKey,
+      email: el("email").value.trim(),
+      refreshToken: api.refreshToken || null
+    }));
+    el("btnForget").style.display = "";
+  } catch (e) { /* özel sekme / kota dolu — sessizce geç */ }
+}
+
+function readSession() {
+  try { return JSON.parse(localStorage.getItem(SESSION_KEY) || "null"); }
+  catch (e) { return null; }
+}
+
+function forgetSession() {
+  try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  el("btnForget").style.display = "none";
+  log("kayıtlı oturum silindi", "ok");
+}
+
+el("btnForget").addEventListener("click", forgetSession);
+
+// --- API-Football kota göstergesi -------------------------------------------
+// 2026-08-21'de kotanın %83'ü dolmuştu ve bunu ancak tesadüfen fark etmiştik.
+// Kota dolarsa tüm veri akışı (skor/ilk 11/fikstür) durur.
+async function loadApiQuota() {
+  const box = el("quotaBox");
+  if (!api.url) return;
+  try {
+    const r = await fetch(api.url + "/functions/v1/get-api-quota", { headers: api.headers() });
+    const j = await r.json();
+    if (!j || !j.ok || j.limit == null) { box.textContent = ""; return; }
+    const pct = j.limit ? Math.round((j.used / j.limit) * 100) : 0;
+    const color = pct >= 95 ? "var(--danger)" : pct >= 80 ? "var(--signal)" : "var(--ink-dim)";
+    box.style.color = color;
+    box.textContent = "API " + j.used.toLocaleString("tr") + "/" + j.limit.toLocaleString("tr") + " (%" + pct + ")";
+    box.title = "API-Football günlük kota — her gün 00:00 UTC'de sıfırlanır" + (j.plan ? " · plan: " + j.plan : "");
+  } catch (e) { box.textContent = ""; }
+}
+
+// --- Canlı Maç İzleme -------------------------------------------------------
+const LIVE_STATUSES = ["1H", "2H", "HT", "ET", "BT", "P", "LIVE", "INT"];
+
+async function loadLiveMatches() {
+  const body = el("liveBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const rFix = await fetch(
+      api.url + "/rest/v1/fixtures?select=id,home_team,away_team,status,home_score,away_score,elapsed" +
+        "&status=in.(" + LIVE_STATUSES.join(",") + ")&id=gt.0&order=elapsed.desc",
+      { headers: api.headers() }
+    );
+    const fixtures = await rFix.json();
+    if (!rFix.ok) throw new Error((fixtures && fixtures.message) || "fixtures okunamadı");
+
+    if (!fixtures.length) {
+      body.innerHTML = '<div class="empty"><strong>Şu an canlı maç yok</strong>Bir maç başladığında burada anlık olarak görünür.</div>';
+      return;
+    }
+
+    const ids = fixtures.map(function (f) { return f.id; }).join(",");
+    // Bildirim tabloları SADECE yönetici oturumuyla okunabilir (bkz. 0069
+    // migration) — anonim bağlanıldıysa bu sütunlar "?" gösterir, hata vermez.
+    const [rLine, rEvents, rStartNotif, rLineNotif] = await Promise.all([
+      fetch(api.url + "/rest/v1/fixture_lineups?select=fixture_id,home_start_xi&fixture_id=in.(" + ids + ")", { headers: api.headers() }),
+      fetch(api.url + "/rest/v1/fixture_live_events?select=fixture_id,events,updated_at&fixture_id=in.(" + ids + ")", { headers: api.headers() }),
+      fetch(api.url + "/rest/v1/match_start_notifications_sent?select=fixture_id&fixture_id=in.(" + ids + ")", { headers: api.headers() }),
+      fetch(api.url + "/rest/v1/lineup_notifications_sent?select=fixture_id&fixture_id=in.(" + ids + ")", { headers: api.headers() })
+    ]);
+    const lineups = rLine.ok ? await rLine.json() : [];
+    const events = rEvents.ok ? await rEvents.json() : [];
+    const startNotif = rStartNotif.ok ? await rStartNotif.json() : null;
+    const lineNotif = rLineNotif.ok ? await rLineNotif.json() : null;
+
+    const lineupBy = {};
+    lineups.forEach(function (l) { lineupBy[l.fixture_id] = (l.home_start_xi || []).length; });
+    const eventBy = {};
+    events.forEach(function (e) { eventBy[e.fixture_id] = e; });
+    const startSet = startNotif ? startNotif.map(function (r) { return r.fixture_id; }) : null;
+    const lineSet = lineNotif ? lineNotif.map(function (r) { return r.fixture_id; }) : null;
+
+    const mark = function (set, id) {
+      if (set === null) return '<span style="color:var(--ink-faint)">?</span>';
+      return set.indexOf(id) >= 0
+        ? '<span style="color:var(--signal)">✓</span>'
+        : '<span style="color:var(--ink-faint)">—</span>';
+    };
+
+    let html = '<table class="grid"><thead><tr>' +
+      '<th>Maç</th><th>Skor</th><th>Dk</th><th>İlk 11</th><th>Olay</th>' +
+      '<th title="Maç başladı bildirimi">Başla</th><th title="İlk 11 açıklandı bildirimi">İlk11</th>' +
+      '</tr></thead><tbody>';
+
+    fixtures.forEach(function (f) {
+      const xi = lineupBy[f.id] || 0;
+      const ev = eventBy[f.id];
+      const evCount = ev && Array.isArray(ev.events) ? ev.events.length : 0;
+      const score = (f.home_score == null || f.away_score == null)
+        ? '<span style="color:var(--ink-faint)">—</span>'
+        : f.home_score + " - " + f.away_score;
+      html += "<tr>" +
+        "<td>" + escapeHtml(f.home_team) + " – " + escapeHtml(f.away_team) +
+          ' <span style="color:var(--ink-faint)">' + escapeHtml(f.status || "") + "</span></td>" +
+        "<td>" + score + "</td>" +
+        "<td>" + (f.elapsed != null ? f.elapsed + "'" : "—") + "</td>" +
+        "<td>" + (xi >= 11
+          ? '<span style="color:var(--signal)">✓ ' + xi + "</span>"
+          : '<span style="color:var(--ink-faint)">— </span>') + "</td>" +
+        "<td>" + (evCount > 0 ? evCount : '<span style="color:var(--ink-faint)">0</span>') + "</td>" +
+        "<td>" + mark(startSet, f.id) + "</td>" +
+        "<td>" + mark(lineSet, f.id) + "</td>" +
+        "</tr>";
+    });
+    html += "</tbody></table>";
+    if (startSet === null || lineSet === null) {
+      html += '<div class="me-sub" style="margin-top:10px">Bildirim sütunları "?" — yönetici oturumu açık değil.</div>';
+    }
+    body.innerHTML = html;
+    log(fixtures.length + " canlı maç listelendi", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) + "</div>";
+  }
+}
+
+el("liveRefreshBtn").addEventListener("click", loadLiveMatches);
+
+
 async function loadCoverage() {
   const body = el("coverageBody");
   body.innerHTML = '<div class="empty">Yükleniyor…</div>';
@@ -2560,6 +2750,30 @@ async function loadCoverage() {
 }
 
 log("panel hazır — anon anahtarını yapıştır ve bağlan");
+/* --- Açılışta otomatik bağlanma -------------------------------------------
+   Kayıtlı oturum varsa alanları doldurup refresh token ile sessizce bağlanır;
+   böylece telefondan panel açıldığında hiçbir şey yazmaya gerek kalmıyor.
+   Şifre saklanmadığı için, refresh token süresi dolmuşsa kullanıcı normal
+   şekilde şifresini girip "Bağlan"a basar. */
+(function autoConnect() {
+  const s = readSession();
+  if (!s) return;
+  if (s.url) el("url").value = s.url;
+  if (s.anonKey) el("key").value = s.anonKey;
+  if (s.email) el("email").value = s.email;
+  el("btnForget").style.display = "";
+  if (!s.url || !s.anonKey || !s.refreshToken) return;
+
+  api.url = s.url; api.anonKey = s.anonKey;
+  api.refreshSession(s.refreshToken).then(function () {
+    log("kayıtlı oturum geri yüklendi: " + (s.email || ""), "ok");
+    el("btnConnect").click();
+  }).catch(function (e) {
+    log("kayıtlı oturum yenilenemedi (" + e.message + ") — şifreyle giriş yapın");
+  });
+})();
+
 </script>
 </body>
 </html>
+
