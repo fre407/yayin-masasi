@@ -94,6 +94,13 @@
   }
   .onair.live { background: var(--signal); box-shadow: 0 0 8px var(--signal); }
 
+  /* Bağlandıktan sonra bağlantı formu gereksiz yer kaplıyordu — özellikle
+     telefonda ekranın yarısını yiyordu. Bağlanınca katlanıyor, "Bağlantı"
+     düğmesiyle tekrar açılabiliyor (kullanıcı isteği, 2026-08-22). */
+  .conn.collapsed { display: none; }
+  header.sticky-head { position: sticky; top: 0; z-index: 20; }
+  #btnConnToggle { margin-left: 8px; }
+
   .conn {
     display: grid;
     grid-template-columns: 2fr 2fr 1.4fr 1.4fr auto;
@@ -304,16 +311,44 @@
 
   /* ---------- Sekme geçişi ---------- */
 
-  .tabs { display: flex; gap: 4px; padding: 0 18px 12px; }
+  /* 15 sekme tek satira sigmiyordu (kullanıcı bildirimi, 2026-08-22) —
+     iki satıra sarıyor. tab-break, 8. sekmeden sonra zorunlu satır sonu
+     verir; dar ekranda ise doğal sarma zaten devreye girer. */
+  .tabs {
+    display: flex; flex-wrap: wrap; gap: 2px 0;
+    padding: 0 18px 10px;
+    align-items: center;
+  }
+  .tab-break { flex-basis: 100%; height: 0; }
+  .tab-row-label {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--ink-faint);
+    margin-right: 10px; padding: 8px 0; user-select: none;
+  }
+
+  /* Telefonda 15 sekme 9 satıra yayılıp içeriği ekranın yarısından aşağı
+     itiyordu (ölçüldü: içerik 394px'den başlıyordu). Dar ekranda iki satıra
+     sarmak yerine TEK satır + yatay kaydırma — standart mobil kalıbı,
+     içerik yukarıda kalıyor. */
+  @media (max-width: 700px) {
+    .tabs {
+      flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab-break, .tab-row-label { display: none; }
+    .tab-btn { white-space: nowrap; flex: 0 0 auto; }
+  }
   .tab-btn {
     background: transparent; border: 1px solid transparent;
     border-bottom: 2px solid transparent;
-    color: var(--ink-dim); border-radius: 0;
-    padding: 8px 4px; margin-right: 14px;
+    color: var(--ink-dim); border-radius: 4px 4px 0 0;
+    padding: 9px 10px; margin-right: 2px;
+    transition: color .12s, background .12s;
   }
-  .tab-btn:hover:not(:disabled) { color: var(--ink); border-color: transparent; }
+  .tab-btn:hover:not(:disabled) { color: var(--ink); background: rgba(255,255,255,0.04); }
   .tab-btn.active {
-    color: var(--signal); border-bottom-color: var(--signal);
+    color: var(--signal); border-bottom-color: var(--signal); background: rgba(255,232,18,0.07);
   }
 
   /* ---------- Maç Editörü ---------- */
@@ -423,13 +458,14 @@
 </head>
 <body>
 
-<header>
+<header class="sticky-head">
   <div class="brand">
     <span class="onair" id="onair"></span>
     <h1>Yayın Masası</h1>
     <span class="sub" id="brandSub">bağlantı bekleniyor</span>
     <span class="sub" id="quotaBox" title="API-Football günlük kota kullanımı"></span>
     <button class="tiny" id="btnForget" type="button" style="display:none;margin-left:8px">Oturumu unut</button>
+    <button class="tiny" id="btnConnToggle" type="button" style="display:none">Bağlantı</button>
   </div>
 
   <div class="conn">
@@ -457,21 +493,24 @@
   <div class="warn" id="warnBox"></div>
 
   <div class="tabs" id="tabs" style="display:none">
-    <button class="tab-btn active" id="tabGeneric" type="button">Genel Tablo Editörü</button>
+    <span class="tab-row-label">Operasyon</span>
     <button class="tab-btn" id="tabMatch" type="button">Maç Editörü</button>
     <button class="tab-btn" id="tabLineupEntry" type="button">İlk 11 Manuel Giriş</button>
     <button class="tab-btn" id="tabDaily" type="button">Günlük Maçlar</button>
     <button class="tab-btn" id="tabNewMatch" type="button">Yeni Maç Ekle</button>
     <button class="tab-btn" id="tabBroadcast" type="button">Yayın Durumu</button>
-    <button class="tab-btn" id="tabSync" type="button">Senkronizasyon</button>
-    <button class="tab-btn" id="tabLeaderboard" type="button">Liderlik Moderasyonu</button>
+    <button class="tab-btn" id="tabLive" type="button">Canlı Maç İzleme</button>
     <button class="tab-btn" id="tabCorrections" type="button">Bilgi Düzeltmeleri</button>
+    <button class="tab-btn" id="tabSync" type="button">Senkronizasyon</button>
+    <div class="tab-break"></div>
+    <span class="tab-row-label">İzleme</span>
+    <button class="tab-btn active" id="tabGeneric" type="button">Genel Tablo Editörü</button>
+    <button class="tab-btn" id="tabLeaderboard" type="button">Liderlik Moderasyonu</button>
     <button class="tab-btn" id="tabNickReports" type="button">Takma Ad Şikayetleri</button>
     <button class="tab-btn" id="tabSquadSync" type="button">Kadro Senkron Durumu</button>
     <button class="tab-btn" id="tabPushStats" type="button">Push Bildirim İstatistikleri</button>
     <button class="tab-btn" id="tabCronHealth" type="button">Cron Sağlık Paneli</button>
     <button class="tab-btn" id="tabCoverage" type="button">İlk11/İstatistik Kapsama</button>
-    <button class="tab-btn" id="tabLive" type="button">Canlı Maç İzleme</button>
   </div>
 </header>
 
@@ -978,6 +1017,9 @@ el("btnConnect").addEventListener("click", async function () {
 
   // Oturum bilgisi ve kota göstergesi (kullanıcı isteği, 2026-08-22).
   saveSession();
+  // Bağlandıktan sonra formu katla — ekranı boş yere doldurmasın.
+  document.querySelector(".conn").classList.add("collapsed");
+  el("btnConnToggle").style.display = "";
   loadApiQuota();
   // Kota günde 7.500 istekle sınırlı ve dolduğunda tüm veri akışı durur —
   // panel açık kaldığı sürece 5 dakikada bir tazeleniyor.
@@ -1344,6 +1386,11 @@ function switchView(which) {
     el(VIEW_IDS[key]).style.display = key === which ? "flex" : "none";
     el(TAB_IDS[key]).classList.toggle("active", key === which);
   });
+  // Mobilde sekme çubuğu yatay kaydığı için aktif sekmeyi görünür alana al.
+  const activeBtn = el(TAB_IDS[which]);
+  if (activeBtn && activeBtn.scrollIntoView) {
+    activeBtn.scrollIntoView({ block: "nearest", inline: "center" });
+  }
   if (VIEW_ON_ENTER[which]) VIEW_ON_ENTER[which]();
 }
 
@@ -2587,6 +2634,10 @@ function forgetSession() {
 }
 
 el("btnForget").addEventListener("click", forgetSession);
+
+el("btnConnToggle").addEventListener("click", function () {
+  document.querySelector(".conn").classList.toggle("collapsed");
+});
 
 // --- API-Football kota göstergesi -------------------------------------------
 // 2026-08-21'de kotanın %83'ü dolmuştu ve bunu ancak tesadüfen fark etmiştik.
