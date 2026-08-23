@@ -510,6 +510,7 @@
     <button class="tab-btn" id="tabSquadSync" type="button">Kadro Senkron Durumu</button>
     <button class="tab-btn" id="tabPushStats" type="button">Push Bildirim İstatistikleri</button>
     <button class="tab-btn" id="tabCronHealth" type="button">Cron Sağlık Paneli</button>
+    <button class="tab-btn" id="tabDeviceActivity" type="button">Cihaz Aktivitesi</button>
     <button class="tab-btn" id="tabCoverage" type="button">İlk11/İstatistik Kapsama</button>
   </div>
 </header>
@@ -751,6 +752,18 @@
     <button id="cronHealthRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
     <div id="cronHealthBody" class="me-body" style="max-width:900px">
       <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewDeviceActivity" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">Bugün uygulamayı açan cihaz sayısı — anonim Supabase oturumlarından (auth.users), IP takibi yapılmıyor. "Bugün aktif" bir cihaz daha önce oturum açmışsa ve token'ı hâlâ geçerliyse artmayabilir (sessiz yenileme) — bu yüzden gerçek açılış sayısının ALT SINIRI olarak oku.</div>
+    <button id="deviceActivityRefreshBtn" class="tiny" style="margin-bottom:14px">Yenile</button>
+    <div id="deviceActivitySummary" class="me-body" style="max-width:900px; margin-bottom:18px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+    <div id="deviceActivityTrend" class="me-body" style="max-width:900px">
     </div>
   </section>
 </main>
@@ -1362,14 +1375,14 @@ const VIEW_IDS = {
   newmatch: "viewNewMatch", broadcast: "viewBroadcast", sync: "viewSync",
   leaderboard: "viewLeaderboard", corrections: "viewCorrections",
   nickreports: "viewNickReports", squadsync: "viewSquadSync",
-  pushstats: "viewPushStats", cronhealth: "viewCronHealth", coverage: "viewCoverage", live: "viewLive"
+  pushstats: "viewPushStats", cronhealth: "viewCronHealth", deviceactivity: "viewDeviceActivity", coverage: "viewCoverage", live: "viewLive"
 };
 const TAB_IDS = {
   tables: "tabGeneric", match: "tabMatch", lineupentry: "tabLineupEntry", daily: "tabDaily",
   newmatch: "tabNewMatch", broadcast: "tabBroadcast", sync: "tabSync",
   leaderboard: "tabLeaderboard", corrections: "tabCorrections",
   nickreports: "tabNickReports", squadsync: "tabSquadSync",
-  pushstats: "tabPushStats", cronhealth: "tabCronHealth", coverage: "tabCoverage", live: "tabLive"
+  pushstats: "tabPushStats", cronhealth: "tabCronHealth", deviceactivity: "tabDeviceActivity", coverage: "tabCoverage", live: "tabLive"
 };
 // Sekme ilk kez açıldığında otomatik veri çeken görünümler (lazy-load) —
 // her seferinde en güncel veriyi görsün diye HER tıklamada yeniden çeker,
@@ -1378,7 +1391,7 @@ const TAB_IDS = {
 const VIEW_ON_ENTER = {
   daily: loadDailyMatches, broadcast: loadBroadcastDashboard, leaderboard: loadLeaderboard,
   corrections: loadCorrections, nickreports: loadNickReports, squadsync: loadSquadSync,
-  pushstats: loadPushStats, cronhealth: loadCronHealth, coverage: loadCoverage, live: loadLiveMatches
+  pushstats: loadPushStats, cronhealth: loadCronHealth, deviceactivity: loadDeviceActivity, coverage: loadCoverage, live: loadLiveMatches
 };
 
 function switchView(which) {
@@ -1407,6 +1420,7 @@ el("tabNickReports").addEventListener("click", function () { switchView("nickrep
 el("tabSquadSync").addEventListener("click", function () { switchView("squadsync"); });
 el("tabPushStats").addEventListener("click", function () { switchView("pushstats"); });
 el("tabCronHealth").addEventListener("click", function () { switchView("cronhealth"); });
+el("tabDeviceActivity").addEventListener("click", function () { switchView("deviceactivity"); });
 el("tabCoverage").addEventListener("click", function () { switchView("coverage"); });
 el("tabLive").addEventListener("click", function () { switchView("live"); });
 
@@ -2590,6 +2604,64 @@ function buildCronRow(row) {
     '<div class="sub-txt">' + escapeHtml(row.schedule) + " — son çalışma: " + escapeHtml(lastRun) +
     ' <span style="color:' + statusColor + '">' + escapeHtml(row.last_status || "-") + "</span></div></div>";
   return el2;
+}
+
+/* ==========================================================================
+   CİHAZ AKTİVİTESİ (public.admin_device_activity_summary/_trend() RPC)
+   auth.users PostgREST'e dışa açık değil (Supabase'in iç şeması) — aynı
+   admin_cron_status desenindeki SECURITY DEFINER köprüsü burada da var
+   (bkz. 0073 migration). IP takibi YOK, anonim oturum (auth.users) sayımı.
+   ========================================================================== */
+
+el("deviceActivityRefreshBtn").addEventListener("click", loadDeviceActivity);
+
+async function loadDeviceActivity() {
+  const summaryBox = el("deviceActivitySummary");
+  const trendBox = el("deviceActivityTrend");
+  summaryBox.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  trendBox.innerHTML = "";
+  if (!api.token) {
+    summaryBox.innerHTML = '<div class="empty"><strong>Admin girişi gerekli</strong>Bu veriyi görmek için üstteki admin e-posta/şifresiyle giriş yapmalısın.</div>';
+    return;
+  }
+  try {
+    const [sumRes, trendRes] = await Promise.all([
+      fetch(api.url + "/rest/v1/rpc/admin_device_activity_summary", {
+        method: "POST", headers: api.headers(), body: JSON.stringify({}),
+      }),
+      fetch(api.url + "/rest/v1/rpc/admin_device_activity_trend", {
+        method: "POST", headers: api.headers(), body: JSON.stringify({}),
+      }),
+    ]);
+    const sumRows = await sumRes.json();
+    const trendRows = await trendRes.json();
+    if (!sumRes.ok) throw new Error((sumRows && sumRows.message) || "özet okunamadı");
+    if (!trendRes.ok) throw new Error((trendRows && trendRows.message) || "trend okunamadı");
+
+    const s = sumRows[0] || { bugun_aktif: 0, bugun_yeni_cihaz: 0, toplam_cihaz: 0 };
+    summaryBox.innerHTML =
+      '<div class="list-row"><div><div class="main-txt">Bugün aktif cihaz</div>' +
+      '<div class="sub-txt" style="font-size:22px; color:var(--ok)">' + s.bugun_aktif + "</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">Bugün yeni açan cihaz</div>' +
+      '<div class="sub-txt" style="font-size:22px; color:var(--ok)">' + s.bugun_yeni_cihaz + "</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">Toplam kayıtlı cihaz</div>' +
+      '<div class="sub-txt" style="font-size:22px">' + s.toplam_cihaz + "</div></div></div>";
+
+    trendBox.innerHTML = "";
+    (trendRows || []).slice().reverse().forEach(function (row) {
+      const d = document.createElement("div");
+      d.className = "list-row";
+      const gun = new Date(row.gun).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", weekday: "short" });
+      d.innerHTML = '<div><div class="main-txt">' + escapeHtml(gun) + '</div>' +
+        '<div class="sub-txt">yeni: ' + row.yeni_cihaz + " · aktif: " + row.aktif_cihaz + "</div></div>";
+      trendBox.appendChild(d);
+    });
+    log("cihaz aktivitesi — bugün " + s.bugun_aktif + " aktif, " + s.bugun_yeni_cihaz + " yeni", "ok");
+  } catch (e) {
+    summaryBox.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
+      "<br>Admin girişi ve 0073 migration'ının uygulanmış olması gerekir.</div>";
+    log("cihaz aktivitesi hatası — " + e.message, "err");
+  }
 }
 
 /* ==========================================================================
