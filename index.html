@@ -1008,6 +1008,22 @@ el("btnConnect").addEventListener("click", async function () {
     log("oturum açılmadı — yazma işlemleri RLS politikalarına takılabilir");
   }
 
+  await afterConnect();
+});
+
+/**
+ * "Bağlan" butonuna basıldıktan (ya da otomatik oturum geri yüklendikten)
+ * SONRA ortak olan adımlar — api.url/anonKey/token zaten ayarlanmış olmalı.
+ * Önceden autoConnect() bunun yerine btnConnect'i programatik tıklatıyordu,
+ * bu da o handler'ın en başındaki "api.token = null" satırını tekrar
+ * çalıştırıp refreshSession()'dan gelen geçerli admin token'ını eziyordu
+ * (şifre hiçbir zaman saklanmadığı için email+pass kontrolü boş şifreyle
+ * başarısız oluyor, token bir daha set edilmiyordu — admin-gated sekmeler
+ * "Admin girişi gerekli" göstermeye devam ediyordu, 2026-08-23'te
+ * "Cihaz Aktivitesi" sekmesinde fark edildi). Artık autoConnect() bu ortak
+ * adımları doğrudan çağırıyor, token'a hiç dokunmadan.
+ */
+async function afterConnect() {
   // Sekme çubuğu ve Maç Editörü, genel şema keşfinden BAĞIMSIZ açılır —
   // Maç Editörü zaten hangi tabloların var olduğunu bilmiyor, doğrudan
   // fixtures/channel_mappings'e sabit sorgu atıyor.
@@ -1037,7 +1053,7 @@ el("btnConnect").addEventListener("click", async function () {
   // Kota günde 7.500 istekle sınırlı ve dolduğunda tüm veri akışı durur —
   // panel açık kaldığı sürece 5 dakikada bir tazeleniyor.
   if (!window.__quotaTimer) window.__quotaTimer = setInterval(loadApiQuota, 5 * 60 * 1000);
-});
+}
 
 function renderTableList() {
   const box = el("tableList");
@@ -2888,9 +2904,9 @@ log("panel hazır — anon anahtarını yapıştır ve bağlan");
   if (!s.url || !s.anonKey || !s.refreshToken) return;
 
   api.url = s.url; api.anonKey = s.anonKey;
-  api.refreshSession(s.refreshToken).then(function () {
+  api.refreshSession(s.refreshToken).then(async function () {
     log("kayıtlı oturum geri yüklendi: " + (s.email || ""), "ok");
-    el("btnConnect").click();
+    await afterConnect();
   }).catch(function (e) {
     log("kayıtlı oturum yenilenemedi (" + e.message + ") — şifreyle giriş yapın");
   });
