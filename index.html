@@ -2727,25 +2727,23 @@ el("btnConnToggle").addEventListener("click", function () {
   document.querySelector(".conn").classList.toggle("collapsed");
 });
 
-// --- SoccersAPI kota göstergesi ----------------------------------------------
-// SoccersAPI geçişi (2026-08-24, kullanıcı isteği): eskiden burada
-// API-Football'ın günlük (7.500/gün) kotası gösteriliyordu — artık kaynak
-// SoccersAPI olduğu için gösterge de onun SAATLİK (5.000/saat, Soccer API 50
-// planı) kotasını okuyor. get-api-quota fonksiyonu hâlâ dosyada duruyor
-// (dünden önceki geçmiş veri hâlâ API-Football id'leriyle kayıtlı olduğu
-// için tamamen silinmedi) ama panel artık ona bakmıyor.
+// --- API-Football kota göstergesi --------------------------------------------
+// GERİ DÖNÜŞ (2026-08-24, kullanıcı isteği): SoccersAPI üyeliği iptal
+// edildiği için gösterge tekrar API-Football'ın GÜNLÜK (7.500/gün) kotasını
+// okuyor (get-api-quota fonksiyonu). get-soccersapi-quota'ya artık bakılmıyor
+// (SoccersAPI cron'ları durduruldu, kota tükenmesi riski yok).
 async function loadApiQuota() {
   const box = el("quotaBox");
   if (!api.url) return;
   try {
-    const r = await fetch(api.url + "/functions/v1/get-soccersapi-quota", { headers: api.headers() });
+    const r = await fetch(api.url + "/functions/v1/get-api-quota", { headers: api.headers() });
     const j = await r.json();
     if (!j || !j.ok || j.limit == null) { box.textContent = ""; return; }
     const pct = j.limit ? Math.round((j.used / j.limit) * 100) : 0;
     const color = pct >= 95 ? "var(--danger)" : pct >= 80 ? "var(--signal)" : "var(--ink-dim)";
     box.style.color = color;
-    box.textContent = "SoccersAPI " + j.used.toLocaleString("tr") + "/" + j.limit.toLocaleString("tr") + " (%" + pct + ")";
-    box.title = "SoccersAPI saatlik kota — her saat başı sıfırlanır" + (j.plan ? " · plan: " + j.plan : "");
+    box.textContent = "API-Football " + j.used.toLocaleString("tr") + "/" + j.limit.toLocaleString("tr") + " (%" + pct + ")";
+    box.title = "API-Football günlük kota — her gün 00:00 UTC'de sıfırlanır" + (j.plan ? " · plan: " + j.plan : "");
   } catch (e) { box.textContent = ""; }
 }
 
