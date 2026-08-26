@@ -2700,11 +2700,19 @@ const SESSION_KEY = "yayinMasasi.session";
 
 function saveSession() {
   try {
+    // Kullanıcı şifre alanını boş bırakıp yalnızca anon bağlantıyla devam
+    // ederse, daha önceki geçerli refresh token'ı `null` ile ezme. Aynı
+    // proje/kullanıcı için saklanan token otomatik girişin tek anahtarıdır.
+    const previous = readSession();
+    const sameConnection = previous
+      && previous.url === api.url
+      && previous.anonKey === api.anonKey
+      && previous.email === el("email").value.trim();
     localStorage.setItem(SESSION_KEY, JSON.stringify({
       url: api.url,
       anonKey: api.anonKey,
       email: el("email").value.trim(),
-      refreshToken: api.refreshToken || null
+      refreshToken: api.refreshToken || (sameConnection ? previous.refreshToken : null) || null
     }));
     el("btnForget").style.display = "";
   } catch (e) { /* özel sekme / kota dolu — sessizce geç */ }
