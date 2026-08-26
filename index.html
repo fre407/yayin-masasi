@@ -1031,6 +1031,20 @@ async function afterConnect() {
   el("onair").className = "onair live";
   el("brandSub").textContent = api.token ? "yetkili" : "anonim";
 
+  // Supabase artık OpenAPI şema kökünü yalnızca service_role ile açıyor.
+  // Bu anahtar tarayıcıya konulamayacağı için genel tablo keşfi başarısız
+  // olsa bile bağlantı ve operasyon ekranları tamamen kullanılabilir. Eski
+  // boş durum metni "bağlanmadın" izlenimi veriyordu; bunu hemen gerçek
+  // bağlantı durumuyla değiştiriyoruz.
+  el("tableList").innerHTML =
+    '<div class="empty" style="padding:20px 16px;text-align:left;font-size:12px">' +
+    '<strong>Bağlantı kuruldu</strong><br>Operasyon ekranlarını üst menüden kullanabilirsin.' +
+    '</div>';
+  el("gridWrap").innerHTML =
+    '<div class="empty"><strong>Bağlantı kuruldu</strong>' +
+    'Maç Editörü, İlk 11 Manuel Giriş ve diğer yönetim araçları üst menüde hazır.' +
+    '</div>';
+
   loadCompetitionKeyOptions();
 
   try {
