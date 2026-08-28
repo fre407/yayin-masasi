@@ -512,6 +512,7 @@
     <button class="tab-btn" id="tabCronHealth" type="button">Cron Sağlık Paneli</button>
     <button class="tab-btn" id="tabDeviceActivity" type="button">Cihaz Aktivitesi</button>
     <button class="tab-btn" id="tabCoverage" type="button">İlk11/İstatistik Kapsama</button>
+    <button class="tab-btn" id="tabFeedback" type="button">Geri Bildirimler</button>
   </div>
 </header>
 
@@ -711,6 +712,16 @@
     <div class="me-sub" style="margin-bottom:14px">Kullanıcıların maç kartındaki "Bilgiyi Düzelt" düğmesinden gönderdiği saat/kanal düzeltme önerileri. İncelediğin/uyguladığın bir öneriyi "Uygulandı, Sil" ile listeden kaldırabilirsin.</div>
     <button id="corrRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
     <div id="corrBody" class="me-body" style="max-width:760px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+  </section>
+</main>
+
+<main id="viewFeedback" style="display:none">
+  <section class="work me-work">
+    <div class="me-sub" style="margin-bottom:14px">"Fikirlerin çok önemli, sen söyle, biz yapalım!" bildirimine tıklayıp gönderilen serbest metin geri bildirimler — en yeni en üstte. İncelediğin bir kaydı "Okundu, Sil" ile listeden kaldırabilirsin.</div>
+    <button id="feedbackRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <div id="feedbackBody" class="me-body" style="max-width:760px">
       <div class="empty">Yükleniyor…</div>
     </div>
   </section>
@@ -1405,14 +1416,16 @@ const VIEW_IDS = {
   newmatch: "viewNewMatch", broadcast: "viewBroadcast", sync: "viewSync",
   leaderboard: "viewLeaderboard", corrections: "viewCorrections",
   nickreports: "viewNickReports", squadsync: "viewSquadSync",
-  pushstats: "viewPushStats", cronhealth: "viewCronHealth", deviceactivity: "viewDeviceActivity", coverage: "viewCoverage", live: "viewLive"
+  pushstats: "viewPushStats", cronhealth: "viewCronHealth", deviceactivity: "viewDeviceActivity", coverage: "viewCoverage", live: "viewLive",
+  feedback: "viewFeedback"
 };
 const TAB_IDS = {
   tables: "tabGeneric", match: "tabMatch", lineupentry: "tabLineupEntry", daily: "tabDaily",
   newmatch: "tabNewMatch", broadcast: "tabBroadcast", sync: "tabSync",
   leaderboard: "tabLeaderboard", corrections: "tabCorrections",
   nickreports: "tabNickReports", squadsync: "tabSquadSync",
-  pushstats: "tabPushStats", cronhealth: "tabCronHealth", deviceactivity: "tabDeviceActivity", coverage: "tabCoverage", live: "tabLive"
+  pushstats: "tabPushStats", cronhealth: "tabCronHealth", deviceactivity: "tabDeviceActivity", coverage: "tabCoverage", live: "tabLive",
+  feedback: "tabFeedback"
 };
 // Sekme ilk kez açıldığında otomatik veri çeken görünümler (lazy-load) —
 // her seferinde en güncel veriyi görsün diye HER tıklamada yeniden çeker,
@@ -1421,7 +1434,8 @@ const TAB_IDS = {
 const VIEW_ON_ENTER = {
   daily: loadDailyMatches, broadcast: loadBroadcastDashboard, leaderboard: loadLeaderboard,
   corrections: loadCorrections, nickreports: loadNickReports, squadsync: loadSquadSync,
-  pushstats: loadPushStats, cronhealth: loadCronHealth, deviceactivity: loadDeviceActivity, coverage: loadCoverage, live: loadLiveMatches
+  pushstats: loadPushStats, cronhealth: loadCronHealth, deviceactivity: loadDeviceActivity, coverage: loadCoverage, live: loadLiveMatches,
+  feedback: loadFeedback
 };
 
 function switchView(which) {
@@ -1451,6 +1465,7 @@ el("tabSquadSync").addEventListener("click", function () { switchView("squadsync
 el("tabPushStats").addEventListener("click", function () { switchView("pushstats"); });
 el("tabCronHealth").addEventListener("click", function () { switchView("cronhealth"); });
 el("tabDeviceActivity").addEventListener("click", function () { switchView("deviceactivity"); });
+el("tabFeedback").addEventListener("click", function () { switchView("feedback"); });
 el("tabCoverage").addEventListener("click", function () { switchView("coverage"); });
 el("tabLive").addEventListener("click", function () { switchView("live"); });
 
@@ -2411,6 +2426,82 @@ async function deleteCorrection(row, rowEl, btn) {
   } catch (e) {
     btn.disabled = false;
     log("silinemedi — " + e.message + " (0049 migration uygulanmamış olabilir)", "err");
+  }
+}
+
+/* ==========================================================================
+   GERİ BİLDİRİMLER ("Fikirlerin çok önemli, sen söyle, biz yapalım!" ekranı)
+   app_feedback tablosunu okur — okuma/silme SADECE admin girişiyle çalışır
+   (0090_app_feedback_and_broadcast.sql'deki admin-only politikalar,
+   Bilgi Düzeltmeleri ile AYNI desen). Otomatik hiçbir aksiyon almaz, sadece
+   listeler; "Okundu, Sil" tıklanınca satır kalıcı olarak silinir.
+   ========================================================================== */
+
+el("feedbackRefreshBtn").addEventListener("click", loadFeedback);
+
+async function loadFeedback() {
+  const body = el("feedbackBody");
+  body.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  try {
+    const r = await fetch(
+      api.url + "/rest/v1/app_feedback?select=*&order=created_at.desc&limit=200",
+      { headers: api.headers() }
+    );
+    const rows = await r.json();
+    if (!r.ok) throw new Error((rows && rows.message) || "geri bildirimler okunamadı");
+
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty"><strong>Liste boş</strong>Henüz gelen bir geri bildirim yok.</div>';
+      log("geri bildirimler — 0 kayıt", "ok");
+      return;
+    }
+
+    body.innerHTML = "";
+    rows.forEach(function (row) { body.appendChild(buildFeedbackRow(row)); });
+    log("geri bildirimler — " + rows.length + " kayıt", "ok");
+  } catch (e) {
+    body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
+      "<br>Görmek için admin girişi ve 0090 migration'ının uygulanmış olması gerekir.</div>";
+    log("geri bildirimler hatası — " + e.message, "err");
+  }
+}
+
+function buildFeedbackRow(row) {
+  const el2 = document.createElement("div");
+  el2.className = "list-row";
+  const when = new Date(row.created_at).toLocaleString("tr-TR");
+  el2.innerHTML =
+    '<div><div class="main-txt">' + escapeHtml(row.message) + "</div>" +
+    '<div class="sub-txt">' + escapeHtml(when) + "</div></div>" +
+    '<div class="actions"></div>';
+  const actions = el2.querySelector(".actions");
+
+  const delBtn = document.createElement("button");
+  delBtn.className = "tiny"; delBtn.textContent = "Okundu, Sil";
+  delBtn.addEventListener("click", function () {
+    deleteFeedback(row, el2, delBtn);
+  });
+  actions.appendChild(delBtn);
+
+  return el2;
+}
+
+async function deleteFeedback(row, rowEl, btn) {
+  if (!api.token) { log("giriş yapılmadı — üstteki yönetici e-posta/şifre ile bağlan", "err"); return; }
+  btn.disabled = true;
+  try {
+    const r = await fetch(api.url + "/rest/v1/app_feedback?id=eq." + row.id, {
+      method: "DELETE", headers: api.headers()
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(function () { return null; });
+      throw new Error((j && (j.message || j.hint)) || "silinemedi");
+    }
+    log("geri bildirim silindi", "ok");
+    rowEl.remove();
+  } catch (e) {
+    btn.disabled = false;
+    log("silinemedi — " + e.message + " (0090 migration uygulanmamış olabilir)", "err");
   }
 }
 
