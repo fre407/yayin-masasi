@@ -751,7 +751,7 @@
 
 <main id="viewPushStats" style="display:none">
   <section class="work me-work">
-    <div class="me-sub" style="margin-bottom:14px">Push bildirim kaydı yapan cihaz sayısı ve en çok favorilenen takımlar — kaç kullanıcının gerçekten favori/bildirim sistemini kullandığını görmek için.</div>
+    <div class="me-sub" style="margin-bottom:14px">"Favori takımı/maçı olan" artık device_favorites tablosundan — push izninden BAĞIMSIZ, gerçek favori sayısı (2026-08-30 düzeltmesi: eskiden push_tokens'tan geliyordu, bu da SADECE push izni veren cihazları sayıyordu, izin reddeden/bildirimi kapatan favorileri hiç göstermiyordu). "Push bildirimi için kayıtlı cihaz" ve en çok favorilenen takımlar hâlâ push_tokens'tan (push-özel).</div>
     <button id="pushStatsRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
     <div id="pushStatsBody" class="me-body" style="max-width:760px">
       <div class="empty">Yükleniyor…</div>
@@ -771,7 +771,7 @@
 
 <main id="viewDeviceActivity" style="display:none">
   <section class="work me-work">
-    <div class="me-sub" style="margin-bottom:14px">Bugün uygulamayı açan cihaz sayısı — anonim Supabase oturumlarından (auth.users), IP takibi yapılmıyor. "Bugün aktif" bir cihaz daha önce oturum açmışsa ve token'ı hâlâ geçerliyse artmayabilir (sessiz yenileme) — bu yüzden gerçek açılış sayısının ALT SINIRI olarak oku.</div>
+    <div class="me-sub" style="margin-bottom:14px">"Bugün aktif" artık device_activity tablosundan — istemci HER açılışta (izin/onboarding durumundan bağımsız) kendi son açılış zamanını yazıyor, bu yüzden geri dönen kullanıcıları da GERÇEKTEN yakalıyor (2026-08-30 düzeltmesi: eskiden auth.users.last_sign_in_at kullanılıyordu, kalıcı oturum sessiz token yenilemesini bu alana hiç yazmadığı için "bugün aktif" pratikte "bugün yeni" ile birebir aynıydı — doğrulandı: 236 eski cihazdan 0'ı yakalanıyordu). IP takibi yapılmıyor. device_activity yeni bir tablo olduğu için AŞAĞIDAKİ TREND GRAFİĞİNDE bugünden ÖNCEKİ günlerin "aktif" sayısı 0 görünecek — geçmişe dönük doldurulamaz, sadece bugünden itibaren doğru.</div>
     <button id="deviceActivityRefreshBtn" class="tiny" style="margin-bottom:14px">Yenile</button>
     <div id="deviceActivitySummary" class="me-body" style="max-width:900px; margin-bottom:18px">
       <div class="empty">Yükleniyor…</div>
@@ -2663,29 +2663,36 @@ async function loadPushStats() {
     return;
   }
   try {
-    const r = await fetch(
-      api.url + "/rest/v1/push_tokens?select=device_id,favorite_teams,favorite_match_fixture_ids",
-      { headers: api.headers() }
-    );
-    const rows = await r.json();
-    if (!r.ok) throw new Error((rows && rows.message) || "push_tokens okunamadı");
+    const [pushRes, favRes] = await Promise.all([
+      fetch(
+        api.url + "/rest/v1/push_tokens?select=device_id,favorite_teams,favorite_match_fixture_ids",
+        { headers: api.headers() }
+      ),
+      fetch(
+        api.url + "/rest/v1/device_favorites?select=device_id,favorite_team_count,favorite_match_count",
+        { headers: api.headers() }
+      ),
+    ]);
+    const rows = await pushRes.json();
+    const favRows = await favRes.json();
+    if (!pushRes.ok) throw new Error((rows && rows.message) || "push_tokens okunamadı");
+    if (!favRes.ok) throw new Error((favRows && favRows.message) || "device_favorites okunamadı");
 
     const teamCounts = new Map();
-    let withTeamFav = 0;
-    let withMatchFav = 0;
     rows.forEach(function (row) {
       const teams = row.favorite_teams || [];
-      const matches = row.favorite_match_fixture_ids || [];
-      if (teams.length) withTeamFav++;
-      if (matches.length) withMatchFav++;
       teams.forEach(function (t) { teamCounts.set(t, (teamCounts.get(t) || 0) + 1); });
     });
     const topTeams = Array.from(teamCounts.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
 
+    // Gerçek favori sayısı — push izninden BAĞIMSIZ (bkz. üstteki açıklama).
+    const withTeamFav = favRows.filter(function (r) { return (r.favorite_team_count || 0) > 0; }).length;
+    const withMatchFav = favRows.filter(function (r) { return (r.favorite_match_count || 0) > 0; }).length;
+
     body.innerHTML =
-      '<div class="list-row"><div><div class="main-txt">Kayıtlı cihaz</div><div class="sub-txt">' + rows.length + " cihaz push bildirimi için kayıtlı</div></div></div>" +
-      '<div class="list-row"><div><div class="main-txt">Favori takımı olan</div><div class="sub-txt">' + withTeamFav + " cihaz</div></div></div>" +
-      '<div class="list-row"><div><div class="main-txt">Favori maçı olan</div><div class="sub-txt">' + withMatchFav + " cihaz</div></div></div>";
+      '<div class="list-row"><div><div class="main-txt">Favori takımı olan</div><div class="sub-txt">' + withTeamFav + " cihaz (push izninden bağımsız, gerçek sayı)</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">Favori maçı olan</div><div class="sub-txt">' + withMatchFav + " cihaz (push izninden bağımsız, gerçek sayı)</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">Push bildirimi için kayıtlı cihaz</div><div class="sub-txt">' + rows.length + " cihaz (yukarıdakinin push izni veren alt kümesi)</div></div></div>";
 
     topTeams.forEach(function (entry, i) {
       const row = document.createElement("div");
@@ -2696,10 +2703,10 @@ async function loadPushStats() {
       body.appendChild(row);
     });
 
-    log("push istatistikleri — " + rows.length + " cihaz", "ok");
+    log("push istatistikleri — " + rows.length + " push kaydı, " + favRows.length + " favori kaydı", "ok");
   } catch (e) {
     body.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
-      "<br>Admin girişi ve 0051 migration'ının uygulanmış olması gerekir.</div>";
+      "<br>Admin girişi ve 0051/0096 migration'larının uygulanmış olması gerekir.</div>";
     log("push istatistikleri hatası — " + e.message, "err");
   }
 }
