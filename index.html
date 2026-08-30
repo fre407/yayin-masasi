@@ -1077,8 +1077,10 @@ async function afterConnect() {
   document.querySelector(".conn").classList.add("collapsed");
   el("btnConnToggle").style.display = "";
   loadApiQuota();
-  // Kota günde 7.500 istekle sınırlı ve dolduğunda tüm veri akışı durur —
-  // panel açık kaldığı sürece 5 dakikada bir tazeleniyor.
+  // Kota dolduğunda tüm veri akışı durur — panel açık kaldığı sürece 5
+  // dakikada bir tazeleniyor (gerçek günlük limit get-api-quota'dan canlı
+  // okunuyor, burada sabit bir sayı varsayılmıyor — plan değişebilir, bkz.
+  // 2026-08-24: Pro 7.500/gün'den Ultra 75.000/gün'e geçildi).
   if (!window.__quotaTimer) window.__quotaTimer = setInterval(loadApiQuota, 5 * 60 * 1000);
 }
 
@@ -1848,7 +1850,16 @@ async function saveLineupForm() {
   function toXi(names, squad) {
     return names.map(function (name) {
       const p = squad.find(function (x) { return x.name === name; });
-      return { name: name, number: (p && p.number != null) ? p.number : null, pos: (p && p.position) || null };
+      // id dahil edildi (otomatik senkronun ürettiği satır formatıyla birebir
+      // aynı olsun diye — bkz. sync-lineups-sporx'teki mapPlayers) — istemci
+      // tarafındaki ID-öncelikli eşleştirme (namesMatch'ten önce) manuel
+      // girilen kadrolarda da devreye girebilsin.
+      return {
+        id: (p && p.id != null) ? p.id : null,
+        name: name,
+        number: (p && p.number != null) ? p.number : null,
+        pos: (p && p.position) || null
+      };
     });
   }
 
@@ -2611,7 +2622,7 @@ async function loadSquadSync() {
   body.innerHTML = '<div class="empty">Yükleniyor…</div>';
   try {
     const r = await fetch(
-      api.url + "/rest/v1/team_squads?select=team_name,updated_at&order=updated_at.asc&limit=500",
+      api.url + "/rest/v1/team_squads?select=team_name,updated_at&order=updated_at.asc&limit=1000",
       { headers: api.headers() }
     );
     const rows = await r.json();
@@ -2880,9 +2891,11 @@ el("btnConnToggle").addEventListener("click", function () {
 
 // --- API-Football kota göstergesi --------------------------------------------
 // GERİ DÖNÜŞ (2026-08-24, kullanıcı isteği): SoccersAPI üyeliği iptal
-// edildiği için gösterge tekrar API-Football'ın GÜNLÜK (7.500/gün) kotasını
-// okuyor (get-api-quota fonksiyonu). get-soccersapi-quota'ya artık bakılmıyor
-// (SoccersAPI cron'ları durduruldu, kota tükenmesi riski yok).
+// edildiği için gösterge tekrar API-Football'ın günlük kotasını okuyor
+// (get-api-quota fonksiyonu, limit değeri API'den CANLI okunur — sabit
+// yazılmadı, plan Ultra'ya (75.000/gün) yükseltildiğinde kod değişmedi).
+// get-soccersapi-quota'ya artık bakılmıyor (SoccersAPI cron'ları durduruldu,
+// kota tükenmesi riski yok).
 async function loadApiQuota() {
   const box = el("quotaBox");
   if (!api.url) return;
@@ -2989,9 +3002,12 @@ async function loadCoverage() {
   const body = el("coverageBody");
   body.innerHTML = '<div class="empty">Yükleniyor…</div>';
   try {
-    const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0).toISOString();
-    const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0).toISOString();
+    // TR yerel gününe göre (bkz. Günlük Maçlar sekmesindeki AYNI desen) —
+    // eskiden tarayıcının kendi yerel saat dilimini kullanıyordu, panel
+    // Türkiye dışındaki bir saat diliminde açılırsa yanlış günü gösterirdi.
+    const todayTr = todayTrDateStr();
+    const start = turkeyPartsToUtcIso(todayTr, "00:00");
+    const end = turkeyPartsToUtcIso(addDaysToTrDateStr(todayTr, 1), "00:00");
 
     const rFix = await fetch(
       api.url + "/rest/v1/fixtures?select=id,home_team,away_team,kickoff_at&kickoff_at=gte." + start +
