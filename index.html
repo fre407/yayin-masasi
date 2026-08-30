@@ -740,7 +740,9 @@
 <main id="viewSquadSync" style="display:none">
   <section class="work me-work">
     <div class="me-sub" style="margin-bottom:14px">Kadro tahmin havuzundaki (team_squads) her takımın en son ne zaman senkronize edildiği — 24 saatten eski satırlar bir sonraki sync-team-squads çalışmasında otomatik tazelenir, burada sadece görünürlük için listeleniyor.</div>
-    <button id="squadSyncRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
+    <button id="squadSyncRefreshBtn" class="tiny" style="margin-bottom:12px">Listeyi Yenile</button>
+    <button id="squadSyncForceBtn" class="tiny" style="margin-bottom:12px">Tüm Kadroları Şimdi Yenile</button>
+    <div id="squadSyncForceStatus" style="margin-bottom:12px;font-size:12px;color:var(--muted, #888)"></div>
     <div id="squadSyncBody" class="me-body" style="max-width:760px">
       <div class="empty">Yükleniyor…</div>
     </div>
@@ -2574,6 +2576,35 @@ function buildNickReportRow(deviceId, count, nickname, lastAt) {
    ========================================================================== */
 
 el("squadSyncRefreshBtn").addEventListener("click", loadSquadSync);
+
+// "Tüm Kadroları Şimdi Yenile" (kullanıcı isteği, 2026-08-30): sadece
+// listeyi yeniden OKUMAK yerine sync-team-squads Edge Function'ını
+// ?force=true ile GERÇEKTEN tetikler — 24 saatlik tazelik kontrolünü
+// atlar, kapsamdaki HER takımı API-Football'dan yeniden çeker. Kapsam
+// ~500 takım olduğu için (2026-08-30'da 520 ölçüldü) bu birkaç dakika
+// sürebilir; edge fonksiyonunun kendi çalışma süresi sınırını aşarsa
+// (çok nadir) fetch hata verir, kullanıcıya olduğu gibi gösterilir.
+el("squadSyncForceBtn").addEventListener("click", forceRefreshAllSquads);
+
+async function forceRefreshAllSquads() {
+  const status = el("squadSyncForceStatus");
+  const btn = el("squadSyncForceBtn");
+  btn.disabled = true;
+  status.textContent = "Tüm kadrolar API-Football'dan yeniden çekiliyor… (birkaç dakika sürebilir, sayfayı kapatma)";
+  try {
+    const r = await fetch(api.url + "/functions/v1/sync-team-squads?force=true", { method: "POST" });
+    const j = await r.json().catch(function () { return null; });
+    if (!r.ok) throw new Error((j && j.message) || ("HTTP " + r.status));
+    status.textContent = "Bitti — kapsamdaki " + (j.teamsInScope ?? "?") + " takımdan " + (j.fetched ?? "?") + " tanesi yenilendi.";
+    log("tüm kadrolar zorla yenilendi — " + JSON.stringify(j), "ok");
+    loadSquadSync();
+  } catch (e) {
+    status.textContent = "Hata: " + e.message;
+    log("kadro zorla yenileme hatası — " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 async function loadSquadSync() {
   const body = el("squadSyncBody");
