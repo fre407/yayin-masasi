@@ -751,7 +751,7 @@
 
 <main id="viewPushStats" style="display:none">
   <section class="work me-work">
-    <div class="me-sub" style="margin-bottom:14px">"Favori takımı/maçı olan" artık device_favorites tablosundan — push izninden BAĞIMSIZ, gerçek favori sayısı (2026-08-30 düzeltmesi: eskiden push_tokens'tan geliyordu, bu da SADECE push izni veren cihazları sayıyordu, izin reddeden/bildirimi kapatan favorileri hiç göstermiyordu). "Push bildirimi için kayıtlı cihaz" ve en çok favorilenen takımlar hâlâ push_tokens'tan (push-özel).</div>
+    <div class="me-sub" style="margin-bottom:14px">"Favori takımı/maçı olan" ve en çok favorilenen takımlar sıralaması artık device_favorites tablosundan — push izninden BAĞIMSIZ, gerçek favori sayısı (2026-08-31 düzeltmesi: sıralama eskiden push_tokens'tan geliyordu, bu da SADECE push izni veren cihazları sayıyordu, izin reddeden/bildirimi kapatan favorileri hiç göstermiyordu). "Push bildirimi için kayıtlı cihaz" hâlâ push_tokens'tan (push-özel, kaç cihazın bildirim aldığını gösterir). Her iki tablodaki kayıtlar, cihaz 60 gündür uygulamayı açmadıysa (muhtemelen kaldırıldıysa) haftalık olarak otomatik silinir.</div>
     <button id="pushStatsRefreshBtn" class="tiny" style="margin-bottom:12px">Yenile</button>
     <div id="pushStatsBody" class="me-body" style="max-width:760px">
       <div class="empty">Yükleniyor…</div>
@@ -2657,11 +2657,13 @@ function buildSquadSyncRow(row) {
 }
 
 /* ==========================================================================
-   PUSH BİLDİRİM İSTATİSTİKLERİ (push_tokens)
+   PUSH BİLDİRİM İSTATİSTİKLERİ (push_tokens + device_favorites)
    Admin-only SELECT gerektirir (bkz. 0051_admin_panel_extras.sql) — mevcut
    "Own select" politikası admin'in de sadece kendi satırını görmesine izin
    veriyordu, bu migration nickname_reports'taki AYNI admin-select desenini
    push_tokens'a da ekledi.
+   Takım sıralaması device_favorites.favorite_teams'ten (0098 migration,
+   2026-08-31) — push izninden bağımsız, gerçek veri.
    ========================================================================== */
 
 el("pushStatsRefreshBtn").addEventListener("click", loadPushStats);
@@ -2680,7 +2682,7 @@ async function loadPushStats() {
         { headers: api.headers() }
       ),
       fetch(
-        api.url + "/rest/v1/device_favorites?select=device_id,favorite_team_count,favorite_match_count",
+        api.url + "/rest/v1/device_favorites?select=device_id,favorite_team_count,favorite_match_count,favorite_teams",
         { headers: api.headers() }
       ),
     ]);
@@ -2689,8 +2691,11 @@ async function loadPushStats() {
     if (!pushRes.ok) throw new Error((rows && rows.message) || "push_tokens okunamadı");
     if (!favRes.ok) throw new Error((favRows && favRows.message) || "device_favorites okunamadı");
 
+    // Siralama artik device_favorites'tan (push izninden bagimsiz, gercek) —
+    // eskiden push_tokens'tan geliyordu, o da sadece push izni veren
+    // cihazlari icerdigi icin sayilar yanilticiydi (2026-08-31 duzeltmesi).
     const teamCounts = new Map();
-    rows.forEach(function (row) {
+    favRows.forEach(function (row) {
       const teams = row.favorite_teams || [];
       teams.forEach(function (t) { teamCounts.set(t, (teamCounts.get(t) || 0) + 1); });
     });
