@@ -2168,7 +2168,7 @@ async function loadBroadcastDashboard() {
     params.set("select", "id,competition_key,home_team,away_team,kickoff_at,status");
     params.set("confirmed_unavailable", "eq.true");
     params.set("order", "kickoff_at.asc");
-    params.set("limit", "300");
+    params.set("limit", "1000");
     const r = await fetch(api.url + "/rest/v1/fixtures_with_channel?" + params.toString(),
                           { headers: api.headers() });
     const rows = await r.json();
