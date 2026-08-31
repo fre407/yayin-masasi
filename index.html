@@ -2699,7 +2699,26 @@ async function loadPushStats() {
       const teams = row.favorite_teams || [];
       teams.forEach(function (t) { teamCounts.set(t, (teamCounts.get(t) || 0) + 1); });
     });
-    const topTeams = Array.from(teamCounts.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+    let topTeams = Array.from(teamCounts.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+
+    // GEÇİCİ YEDEK (kullanıcı raporu, 2026-08-31 — panel boş görününce
+    // "nereye gitti?" diye sordu): favorite_teams sütunu 0098 migration'ıyla
+    // YENİ eklendi, istemci bunu ancak OTA indirip İKİNCİ açılışta uygulayan
+    // cihazlarda dolduruyor — mevcut kayıtların hepsi hâlâ eski client'tan,
+    // yani teamCounts geçici olarak boş kalabilir. Gerçek veri dolana kadar
+    // eski (push_tokens tabanlı, push izni verenlerle sınırlı) sıralamaya
+    // düşülüyor — hiç bilgi göstermemektense etiketli/eksik bilgi göstermek
+    // daha iyi, ve hangi kaynaktan geldiği açıkça belirtiliyor.
+    let topTeamsSource = "gerçek — device_favorites";
+    if (topTeams.length === 0) {
+      const legacyCounts = new Map();
+      rows.forEach(function (row) {
+        const teams = row.favorite_teams || [];
+        teams.forEach(function (t) { legacyCounts.set(t, (legacyCounts.get(t) || 0) + 1); });
+      });
+      topTeams = Array.from(legacyCounts.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 10);
+      topTeamsSource = "geçici yedek — push_tokens (sadece push izni verenler, device_favorites'ta henüz veri yok)";
+    }
 
     // Gerçek favori sayısı — push izninden BAĞIMSIZ (bkz. üstteki açıklama).
     const withTeamFav = favRows.filter(function (r) { return (r.favorite_team_count || 0) > 0; }).length;
@@ -2710,6 +2729,13 @@ async function loadPushStats() {
       '<div class="list-row"><div><div class="main-txt">Favori maçı olan</div><div class="sub-txt">' + withMatchFav + " cihaz (push izninden bağımsız, gerçek sayı)</div></div></div>" +
       '<div class="list-row"><div><div class="main-txt">Push bildirimi için kayıtlı cihaz</div><div class="sub-txt">' + rows.length + " cihaz (yukarıdakinin push izni veren alt kümesi)</div></div></div>";
 
+    if (topTeams.length > 0) {
+      const sourceLabel = document.createElement("div");
+      sourceLabel.className = "me-sub";
+      sourceLabel.style.margin = "14px 0 4px";
+      sourceLabel.textContent = "En çok favorilenen takımlar — kaynak: " + topTeamsSource;
+      body.appendChild(sourceLabel);
+    }
     topTeams.forEach(function (entry, i) {
       const row = document.createElement("div");
       row.className = "list-row";
