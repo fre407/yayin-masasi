@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "yayin-masasi-panel-2026-09-09",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["http-server", "C:/Users/fatih/yayin-masasi-repo", "-p", "8541", "-c-1"],
+      "port": 8541
+    }
+  ]
+}

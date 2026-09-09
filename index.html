@@ -778,6 +778,13 @@
     </div>
     <div id="deviceActivityTrend" class="me-body" style="max-width:900px">
     </div>
+
+    <div class="me-sub" style="margin:28px 0 14px">Silinen/geçersiz cihazlar — bir push token'ı "DeviceNotRegistered" hatasıyla başarısız olursa Expo'nun kendi tanımına göre bu neredeyse her zaman "uygulama kaldırıldı" demektir (bkz. supabase/functions/_shared/expoPush.ts, 2026-09-09). Sadece favori takımı/maçı olup GERÇEKTEN bildirim gönderilmeye çalışılan cihazlar ölçülüyor — hiç bildirim tetiklenmemiş bir cihaz burada hiç görünmeyebilir, bu yüzden sayı gerçek toplam silinme sayısının bir ALT sınırıdır, tam toplam değil.</div>
+    <div id="deadTokensSummary" class="me-body" style="max-width:900px; margin-bottom:18px">
+      <div class="empty">Yükleniyor…</div>
+    </div>
+    <div id="deadTokensTrend" class="me-body" style="max-width:900px">
+    </div>
   </section>
 </main>
 
@@ -2814,7 +2821,10 @@ function buildCronRow(row) {
    (bkz. 0073 migration). IP takibi YOK, anonim oturum (auth.users) sayımı.
    ========================================================================== */
 
-el("deviceActivityRefreshBtn").addEventListener("click", loadDeviceActivity);
+el("deviceActivityRefreshBtn").addEventListener("click", function () {
+  loadDeviceActivity();
+  loadDeadTokens();
+});
 
 async function loadDeviceActivity() {
   const summaryBox = el("deviceActivitySummary");
@@ -2862,6 +2872,60 @@ async function loadDeviceActivity() {
     summaryBox.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
       "<br>Admin girişi ve 0073 migration'ının uygulanmış olması gerekir.</div>";
     log("cihaz aktivitesi hatası — " + e.message, "err");
+  }
+}
+
+/* ==========================================================================
+   SİLİNEN/GEÇERSİZ CİHAZLAR (public.admin_dead_push_tokens_summary/_trend() RPC)
+   Kaynak: supabase/functions/_shared/expoPush.ts — bir push bileti
+   "DeviceNotRegistered" ile başarısız olduğunda kalıcı olarak kaydediliyor
+   (bkz. 0128 migration). Aynı SECURITY DEFINER admin köprüsü deseni.
+   ========================================================================== */
+
+async function loadDeadTokens() {
+  const summaryBox = el("deadTokensSummary");
+  const trendBox = el("deadTokensTrend");
+  summaryBox.innerHTML = '<div class="empty">Yükleniyor…</div>';
+  trendBox.innerHTML = "";
+  if (!api.token) {
+    summaryBox.innerHTML = '<div class="empty"><strong>Admin girişi gerekli</strong>Bu veriyi görmek için üstteki admin e-posta/şifresiyle giriş yapmalısın.</div>';
+    return;
+  }
+  try {
+    const [sumRes, trendRes] = await Promise.all([
+      fetch(api.url + "/rest/v1/rpc/admin_dead_push_tokens_summary", {
+        method: "POST", headers: api.headers(), body: JSON.stringify({}),
+      }),
+      fetch(api.url + "/rest/v1/rpc/admin_dead_push_tokens_trend", {
+        method: "POST", headers: api.headers(), body: JSON.stringify({}),
+      }),
+    ]);
+    const sumRows = await sumRes.json();
+    const trendRows = await trendRes.json();
+    if (!sumRes.ok) throw new Error((sumRows && sumRows.message) || "özet okunamadı");
+    if (!trendRes.ok) throw new Error((trendRows && trendRows.message) || "trend okunamadı");
+
+    const s = sumRows[0] || { bugun_silinen: 0, toplam_benzersiz_silinen: 0 };
+    summaryBox.innerHTML =
+      '<div class="list-row"><div><div class="main-txt">Bugün silinen/geçersiz cihaz</div>' +
+      '<div class="sub-txt" style="font-size:22px; color:var(--danger)">' + s.bugun_silinen + "</div></div></div>" +
+      '<div class="list-row"><div><div class="main-txt">Toplam benzersiz silinen (tüm zamanlar)</div>' +
+      '<div class="sub-txt" style="font-size:22px">' + s.toplam_benzersiz_silinen + "</div></div></div>";
+
+    trendBox.innerHTML = "";
+    (trendRows || []).slice().reverse().forEach(function (row) {
+      const d = document.createElement("div");
+      d.className = "list-row";
+      const gun = new Date(row.gun).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", weekday: "short" });
+      d.innerHTML = '<div><div class="main-txt">' + escapeHtml(gun) + '</div>' +
+        '<div class="sub-txt">silinen: ' + row.silinen_cihaz + "</div></div>";
+      trendBox.appendChild(d);
+    });
+    log("silinen cihazlar — bugün " + s.bugun_silinen, "ok");
+  } catch (e) {
+    summaryBox.innerHTML = '<div class="empty"><strong>Okunamadı</strong>' + escapeHtml(e.message) +
+      "<br>Admin girişi ve 0128 migration'ının uygulanmış olması gerekir.</div>";
+    log("silinen cihazlar hatası — " + e.message, "err");
   }
 }
 
