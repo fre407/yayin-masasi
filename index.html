@@ -771,7 +771,7 @@
     <div class="device-activity-grid">
       <div>
         <div class="device-activity-col-title">Aktif / Yeni Cihazlar</div>
-        <div class="me-sub" style="margin-bottom:14px">"Bugün aktif" artık device_activity tablosundan — istemci HER açılışta (izin/onboarding durumundan bağımsız) kendi son açılış zamanını yazıyor, bu yüzden geri dönen kullanıcıları da GERÇEKTEN yakalıyor (2026-08-30 düzeltmesi: eskiden auth.users.last_sign_in_at kullanılıyordu, kalıcı oturum sessiz token yenilemesini bu alana hiç yazmadığı için "bugün aktif" pratikte "bugün yeni" ile birebir aynıydı — doğrulandı: 236 eski cihazdan 0'ı yakalanıyordu). IP takibi yapılmıyor. device_activity yeni bir tablo olduğu için TREND GRAFİĞİNDE bugünden ÖNCEKİ günlerin "aktif" sayısı 0 görünecek — geçmişe dönük doldurulamaz, sadece bugünden itibaren doğru.</div>
+        <div class="me-sub" style="margin-bottom:14px">"Bugün aktif" artık device_activity tablosundan — istemci HER açılışta (izin/onboarding durumundan bağımsız) kendi son açılış zamanını yazıyor, bu yüzden geri dönen kullanıcıları da GERÇEKTEN yakalıyor (2026-08-30 düzeltmesi: eskiden auth.users.last_sign_in_at kullanılıyordu, kalıcı oturum sessiz token yenilemesini bu alana hiç yazmadığı için "bugün aktif" pratikte "bugün yeni" ile birebir aynıydı — doğrulandı: 236 eski cihazdan 0'ı yakalanıyordu). IP takibi yapılmıyor. device_activity yeni bir tablo olduğu için TREND GRAFİĞİNDE bugünden ÖNCEKİ günlerin "aktif" sayısı 0 görünecek — geçmişe dönük doldurulamaz, sadece bugünden itibaren doğru. PLATFORM KIRILIMI (2026-09-23 eklendi): istemci artık her açılışta Android/iOS bilgisini de yazıyor. "Bilinmeyen", bu özellik eklendikten SONRA uygulamayı henüz hiç açmamış cihazlar — geçmişe dönük doldurulamaz, o yüzden ilk günlerde yüksek olması normaldir ve cihazlar uygulamayı açtıkça kendiliğinden erir. Android + iOS + bilinmeyen toplamı "bugün aktif" sayısına eşit olmalıdır.</div>
         <div id="deviceActivitySummary" class="me-body" style="margin-bottom:18px">
           <div class="empty">Yükleniyor…</div>
         </div>
@@ -2774,11 +2774,21 @@ async function loadDeviceActivity() {
     if (!trendRes.ok) throw new Error((trendRows && trendRows.message) || "trend okunamadı");
 
     const s = sumRows[0] || { bugun_aktif: 0, bugun_yeni_cihaz: 0, toplam_cihaz: 0 };
+    // Platform kırılımı (0129 migration'ı). Migration uygulanmamışsa bu alanlar
+    // hiç gelmez — o zaman satırı HİÇ çizmiyoruz; "Android 0 · iOS 0" yazmak
+    // "hiç iOS kullanıcısı yok" gibi YANLIŞ bir izlenim verirdi.
+    function platformLine(android, ios, bilinmeyen) {
+      if (android === undefined || ios === undefined) return "";
+      return '<div class="sub-txt" style="margin-top:3px">Android <b>' + android +
+        '</b> · iOS <b>' + ios + '</b> · bilinmeyen <b>' + (bilinmeyen || 0) + "</b></div>";
+    }
     summaryBox.innerHTML =
       '<div class="list-row"><div><div class="main-txt">Bugün aktif cihaz</div>' +
-      '<div class="sub-txt" style="font-size:22px; color:var(--ok)">' + s.bugun_aktif + "</div></div></div>" +
+      '<div class="sub-txt" style="font-size:22px; color:var(--ok)">' + s.bugun_aktif + "</div>" +
+      platformLine(s.bugun_aktif_android, s.bugun_aktif_ios, s.bugun_aktif_bilinmeyen) + "</div></div>" +
       '<div class="list-row"><div><div class="main-txt">Bugün yeni açan cihaz</div>' +
-      '<div class="sub-txt" style="font-size:22px; color:var(--ok)">' + s.bugun_yeni_cihaz + "</div></div></div>" +
+      '<div class="sub-txt" style="font-size:22px; color:var(--ok)">' + s.bugun_yeni_cihaz + "</div>" +
+      platformLine(s.bugun_yeni_android, s.bugun_yeni_ios, s.bugun_yeni_bilinmeyen) + "</div></div>" +
       '<div class="list-row"><div><div class="main-txt">Toplam kayıtlı cihaz</div>' +
       '<div class="sub-txt" style="font-size:22px">' + s.toplam_cihaz + "</div></div></div>";
 
